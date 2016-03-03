@@ -37,6 +37,11 @@
 
 #include <seqan/arg_parse.h>
 
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <map>
+
 // ==========================================================================
 // Classes
 // ==========================================================================
@@ -55,16 +60,113 @@ struct AppOptions
     int verbosity;
 
     // The first (and only) argument of the program is stored here.
-    seqan::CharString text;
+    seqan::CharString rna_file;
 
     AppOptions() :
         verbosity(1)
     {}
 };
 
+template <typename TAlphabet>
+struct StockholmRecord {
+	// header (GF and GS tags -> tag value)
+	std::map<std ::string, std::string > header;
+	// seqence names -> sequence maps
+	std::map<std::string, seqan::String<TAlphabet> > seqences;
+	// per column (GC) -> annotation string
+	std::map<std::string, std::string > seqence_information;
+};
+
 // ==========================================================================
 // Functions
 // ==========================================================================
+
+StockholmRecord<seqan::Rna> read_Stockholm_file(char * file) {
+	StockholmRecord<seqan::Rna> record;
+
+	// read Stockholm format 
+	std::ifstream inStream(file, std::ios::in);
+
+	// go to block with metadata (#=GF blocks, no other right now)
+	std::string line;
+
+	do { // skip newlines to the first #= block
+		std::getline(inStream, line);
+	} while (line.substr(0, 2) != "#=");
+
+	std::cout << "Reading header\n";
+
+	// read the metadata tags until whitespace
+	do {
+		std::string tag, value;
+		std::istringstream iss(line);
+		
+		iss >> tag; // skip tag start
+		iss >> tag; // get the tag of the information
+
+		// get the value of the tag
+		std::getline(iss, value);
+		// strip whitespace from the tag
+		value.erase(0, value.find_first_not_of(" \t"));
+
+		// append the tag contents if they were spread over multiple lines
+		if (record.header.find(tag) == record.header.end())
+			record.header[tag] = value;
+		else
+			record.header[tag].append(" " + value);
+
+		std::getline(inStream, line);
+	} while (line.find_first_not_of("\t\n ") != std::string::npos);
+
+	std::cout << "Header end\n";
+
+	do { // skip newlines 
+		std::getline(inStream, line);
+	} while (line.find_first_not_of("\t\n ") == std::string::npos);
+
+	std::cout << "Reading alignment\n";
+
+	// read the sequences and the metadata sequence tags (#=GC block)
+	do {
+		std::istringstream iss(line);
+		//std::cout << line << "\n";
+
+		// read tags
+		if (line[0] == '#') {
+			std::string tag, value;
+			iss >> tag; // skip tag start
+			iss >> tag; // get the tag of the information
+			iss >> value; // read the value (Newick string, consensus sequence, etc.)
+
+			record.seqence_information[tag] = value;
+		}
+		// read sequences
+		else {
+			std::string name, sequence;
+			iss >> name >> sequence;
+			record.seqences[name] = sequence;
+		}
+
+		std::getline(inStream, line);
+	} while (line.find_first_not_of("\t\n ") != std::string::npos);
+
+	for (auto elem : record.header)
+	{
+		std::cout << elem.first << " " << elem.second << "\n";
+	}
+
+	for (auto elem : record.seqences)
+	{
+		std::cout << elem.first << " " << elem.second << "\n";
+	}
+
+	for (auto elem : record.seqence_information)
+	{
+		std::cout << elem.first << " " << elem.second << "\n";
+	}
+
+	return record;
+}
 
 // --------------------------------------------------------------------------
 // Function parseCommandLine()
@@ -81,11 +183,11 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     setDate(parser, __DATE__);
 
     // Define usage line and long description.
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] \"\\fITEXT\\fP\"");
+    addUsageLine(parser, "[\\fIOPTIONS\\fP] \"\\fIMULTIPLE ALIGNMENT\\fP\"");
     addDescription(parser, "Generate a searchable RNA motif from a multiple structural RNA alignment.");
 
     // We require one argument.
-    addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "TEXT"));
+    addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
 
     addOption(parser, seqan::ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
     addOption(parser, seqan::ArgParseOption("v", "verbose", "Enable verbose output."));
@@ -110,7 +212,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
         options.verbosity = 2;
     if (isSet(parser, "very-verbose"))
         options.verbosity = 3;
-    seqan::getArgumentValue(options.text, parser, 0);
+    seqan::getArgumentValue(options.rna_file, parser, 0);
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -127,7 +229,7 @@ int main(int argc, char const ** argv)
     seqan::ArgumentParser parser;
     AppOptions options;
     seqan::ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
-
+	
     // If there was an error parsing or built-in argument parser functionality
     // was triggered then we exit the program.  The return code is 1 if there
     // were errors and 0 if there were none.
@@ -143,8 +245,14 @@ int main(int argc, char const ** argv)
         std::cout << "__OPTIONS____________________________________________________________________\n"
                   << '\n'
                   << "VERBOSITY\t" << options.verbosity << '\n'
-                  << "TEXT     \t" << options.text << "\n\n";
+                  << "RNA      \t" << options.rna_file << "\n\n";
     }
+
+	StockholmRecord<seqan::Rna> record;
+	
+	record = read_Stockholm_file(seqan::toCString(options.rna_file));
+
+	// generate pairwise alignments with RNAalifold
 
     return 0;
 }
