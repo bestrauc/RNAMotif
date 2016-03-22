@@ -8,7 +8,7 @@
 
 cmake_minimum_required (VERSION 3.0.0)
 project (seqan_apps_RNAMotif CXX)
-message (STATUS "Configuring apps\\RNAMotif")
+message (STATUS "Configuring apps/RNAMotif")
 
 # ----------------------------------------------------------------------------
 # Dependencies
@@ -16,13 +16,14 @@ message (STATUS "Configuring apps\\RNAMotif")
 
 # Search SeqAn and select dependencies.
 find_package (SeqAn REQUIRED)
-
+find_package (OpenMP REQUIRED)
 # ----------------------------------------------------------------------------
 # Build Setup
 # ----------------------------------------------------------------------------
 
 # Add include directories.
 include_directories (${SEQAN_INCLUDE_DIRS_MAIN})
+include_directories ("/usr/include/ViennaRNA")
 include_directories (SYSTEM ${SEQAN_INCLUDE_DIRS_DEPS})
 
 # Add definitions set by find_package (SeqAn).
@@ -32,10 +33,10 @@ add_definitions (${SEQAN_DEFINITIONS})
 add_executable (RNAMotif RNAMotif.cpp)
 
 # Add dependencies found by find_package (SeqAn).
-target_link_libraries (RNAMotif ${SEQAN_LIBRARIES})
+target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/local/lib/libRNA.a")
 
 # Add CXX flags found by find_package (SeqAn).
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 
 # ----------------------------------------------------------------------------
 # Installation

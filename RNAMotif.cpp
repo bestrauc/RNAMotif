@@ -34,18 +34,93 @@
 
 #include <seqan/basic.h>
 #include <seqan/sequence.h>
-
 #include <seqan/arg_parse.h>
+#include <seqan/align.h>
+#include <seqan/graph_align.h>
+#include <seqan/graph_types.h>
 
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <map>
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+extern "C"{
+	#include  <ViennaRNA/data_structures.h>
+	#include  <ViennaRNA/mfe.h>
+	#include  <ViennaRNA/params.h>
+	#include  <ViennaRNA/utils.h>
+	#include  <ViennaRNA/eval.h>
+	#include  <ViennaRNA/fold.h>
+	#include  <ViennaRNA/part_func.h>
+}
+
 // ==========================================================================
 // Classes
 // ==========================================================================
 
+//types used in the program
+typedef unsigned TPosition;
+typedef float TScoreValue;
+typedef seqan::CharString TString;
+typedef float TBioval;
+typedef std::map<TPosition, TScoreValue> TMap;
+typedef seqan::String<TMap > TMapLine;
+
+typedef float TCargo;
+typedef seqan::Graph<seqan::Directed<TCargo> > TDgraph;
+typedef seqan::VertexDescriptor<TDgraph>::Type TDVertexDescriptor;
+typedef seqan::EdgeDescriptor<TDgraph>::Type TDEdgeDescriptor;
+typedef seqan::Graph<seqan::Undirected<TCargo> > TUgraph;
+typedef seqan::VertexDescriptor<TUgraph>::Type TUVertexDescriptor;
+typedef seqan::EdgeDescriptor<TUgraph>::Type TUEdgeDescriptor;
+
+typedef seqan::Map<TPosition, TDVertexDescriptor> TMapDGraph;
+typedef seqan::String<TMapDGraph > TMapDGraphStr;
+typedef seqan::Map<TPosition, TUVertexDescriptor> TMapUGraph;
+typedef seqan::String<TMapUGraph > TMapUGraphStr;
+
+typedef seqan::RnaString TSequence;
+typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;      // align type
+
+struct vectGraphElement {
+	std::vector<TUVertexDescriptor > uVertexVect;
+	TUgraph interGraph; // this graph represents all the computed interaction edges
+	std::vector<TDVertexDescriptor > dVertexVect;
+	TDgraph interGraphUpdated;
+};
+
+template <typename TString, typename TPosition>
+struct fixedStructElement {
+	TString method; // place the method and parameters used to compute the structure
+//	seqan::String<unsigned> structure;
+	seqan::String<TPosition> seqPos;
+	seqan::String<TPosition> interPos;
+};
+template <typename TString, typename TBioval>
+struct bioValStructElement {
+	TString method; // place the method and parameters used to compute the structure
+//	seqan::String<TBioval> val;
+	seqan::String<TBioval> val;
+};
+
+template <typename TSequence, typename TString, typename TPosition, typename TBioval, typename TMapLine>
+struct RnaStructSeq {
+	TSequence seq;  // from fasta input
+	TString qual;  // from fasta input
+	TString id;  // from fasta input
+	TString info; // raw info from bpseq or ebpseq input
+	seqan::String<fixedStructElement<TString, TPosition> > structPairMate; //TODO use this field to collect all the structural information of this sequence
+	seqan::String<bioValStructElement<TString, TBioval> > structBioVal;
+	vectGraphElement bpProb;
+//	seqan::String<std::map<TPosition, TValue> > *bpProb;
+//	TMapLine *bpProb;
+};
+
+typedef RnaStructSeq<TSequence, TString, TPosition, TBioval, TMapLine> TRnaStruct;
 // --------------------------------------------------------------------------
 // Class AppOptions
 // --------------------------------------------------------------------------
@@ -69,21 +144,21 @@ struct AppOptions
 
 template <typename TAlphabet>
 struct StockholmRecord {
-	// header (GF and GS tags -> tag value)
+	// header (GF tags -> tag value)
 	std::map<std ::string, std::string > header;
 	// seqence names -> sequence maps
-	std::map<std::string, seqan::String<TAlphabet> > seqences;
+	std::map<std::string, std::string > seqences;
 	// per column (GC) -> annotation string
 	std::map<std::string, std::string > seqence_information;
+
+	//TODO: Maybe support per-sequence (GS) and per-residue (GR) annotation
 };
 
 // ==========================================================================
 // Functions
 // ==========================================================================
 
-StockholmRecord<seqan::Rna> read_Stockholm_file(char * file) {
-	StockholmRecord<seqan::Rna> record;
-
+void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record) {
 	// read Stockholm format 
 	std::ifstream inStream(file, std::ios::in);
 
@@ -94,78 +169,68 @@ StockholmRecord<seqan::Rna> read_Stockholm_file(char * file) {
 		std::getline(inStream, line);
 	} while (line.substr(0, 2) != "#=");
 
-	std::cout << "Reading header\n";
+	std::stringstream test;
 
-	// read the metadata tags until whitespace
+	int line_num = 2;
+
+	// read the file and save the lines depending on their flags
 	do {
-		std::string tag, value;
+		++line_num;
+		std::string tag, feature, value;
 		std::istringstream iss(line);
 		
-		iss >> tag; // skip tag start
-		iss >> tag; // get the tag of the information
-
-		// get the value of the tag
-		std::getline(iss, value);
-		// strip whitespace from the tag
-		value.erase(0, value.find_first_not_of(" \t"));
-
-		// append the tag contents if they were spread over multiple lines
-		if (record.header.find(tag) == record.header.end())
-			record.header[tag] = value;
-		else
-			record.header[tag].append(" " + value);
-
-		std::getline(inStream, line);
-	} while (line.find_first_not_of("\t\n ") != std::string::npos);
-
-	std::cout << "Header end\n";
-
-	do { // skip newlines 
-		std::getline(inStream, line);
-	} while (line.find_first_not_of("\t\n ") == std::string::npos);
-
-	std::cout << "Reading alignment\n";
-
-	// read the sequences and the metadata sequence tags (#=GC block)
-	do {
-		std::istringstream iss(line);
-		//std::cout << line << "\n";
-
-		// read tags
-		if (line[0] == '#') {
-			std::string tag, value;
-			iss >> tag; // skip tag start
-			iss >> tag; // get the tag of the information
-			iss >> value; // read the value (Newick string, consensus sequence, etc.)
-
-			record.seqence_information[tag] = value;
+		// skip if line is a newline
+		if (line.find_first_not_of("\t\r\n ") == std::string::npos){
+			continue;
 		}
-		// read sequences
+
+		// check if the line contains metadata
+		if (line[0] == '#'){
+			iss >> tag; 						// get the tag
+			tag = tag.substr(2, tag.size());	// remove #= from tag
+			iss >> feature; 					// get the feature description
+			std::getline(iss, value);		 	// the rest of the line is the value
+			// strip space before the line and newline at the end
+			value.erase(0, value.find_first_not_of(" \t"));
+			value.erase(std::remove(value.begin(), value.end(), '\r'), value.end());
+			value.erase(std::remove(value.begin(), value.end(), '\n'), value.end());
+
+			// store tag in the respective map
+			if (tag == "GF"){
+				if (record.header.find(feature) == record.header.end())
+					record.header[feature] = value;
+				// append the tag contents if they were spread over multiple lines
+				else
+					record.header[feature].append(" " + value);
+			}
+
+			if (tag == "GC"){
+				record.seqence_information[feature] = value;
+			}
+		}
+		// we have a sequence record
 		else {
 			std::string name, sequence;
 			iss >> name >> sequence;
 			record.seqences[name] = sequence;
+
 		}
+	}while (std::getline(inStream, line));
 
-		std::getline(inStream, line);
-	} while (line.find_first_not_of("\t\n ") != std::string::npos);
-
-	for (auto elem : record.header)
+	/*for (auto elem : record.header)
 	{
 		std::cout << elem.first << " " << elem.second << "\n";
-	}
+	}*/
 
-	for (auto elem : record.seqences)
+//	for (auto elem : record.seqences)
+//	{
+//		std::cout << elem.first << " " << elem.second << "\n";
+//	}
+
+	/*for (auto elem : record.seqence_information)
 	{
 		std::cout << elem.first << " " << elem.second << "\n";
-	}
-
-	for (auto elem : record.seqence_information)
-	{
-		std::cout << elem.first << " " << elem.second << "\n";
-	}
-
-	return record;
+	}*/
 }
 
 // --------------------------------------------------------------------------
@@ -248,11 +313,63 @@ int main(int argc, char const ** argv)
                   << "RNA      \t" << options.rna_file << "\n\n";
     }
 
+    // read the stockholm alignment
 	StockholmRecord<seqan::Rna> record;
-	
-	record = read_Stockholm_file(seqan::toCString(options.rna_file));
+	read_Stockholm_file(seqan::toCString(options.rna_file), record);
 
-	// generate pairwise alignments with RNAalifold
+	std::cout << "Structure prediction\n";
+
+	std::vector<TRnaStruct> RNASeqs;
+
+
+	for (auto elem : record.seqences)
+	{
+		size_t seq_size = elem.second.length();
+
+		// create RNA data structure
+		TRnaStruct rna;
+		rna.id = seqan::CharString(elem.first);		// sequence name/id
+		rna.seq = seqan::RnaString(elem.second);	// sequence
+
+		// save sequence structure
+		seqan::appendValue(rna.structPairMate, fixedStructElement<TString, TPosition>());
+		//rna.structPairMate[0].seqPos
+
+
+		// add new vertex for each base and save the vertex references
+		rna.bpProb.uVertexVect.resize(seq_size);
+		for (unsigned i=0; i < seq_size; ++i){
+			rna.bpProb.uVertexVect[i] = seqan::addVertex(rna.bpProb.interGraph);
+		}
+
+
+		// create RNAlib data structures
+		const char * seq = elem.second.c_str();
+		char  *structure = (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
+		vrna_fold_compound_t *vc = vrna_fold_compound(seq, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+
+		// predict secondary structure (will create base pair probs in compound)
+		double gibbs = (double)vrna_pf(vc, structure);
+		printf("%s %zu\n%s (%6.2f)\n", seq, seq_size, structure, gibbs);
+
+		// extract base pair probabilities from fold compound
+		vrna_plist_t *pl1, *ptr;
+		pl1 = vrna_plist_from_probs(vc, 0.05);
+
+		// get size of probability list (a full list, if not filtered with a threshold,
+		// contains the upper half of the n x n probability matrix (size (n x n)/2 - n)
+		unsigned size;
+		for(size = 0, ptr = pl1; ptr->i; size++, ptr++);
+
+		// store base pair prob. in the interaction graph
+		for(unsigned i=0; i<size;++i)
+		{
+			//std::cout << i << "_"<< pl1[i].i <<":"<< pl1[i].j <<"|"<< pl1[i].p <<"|"<< pl1[i].type << "\n";
+			seqan::addEdge(rna.bpProb.interGraph, rna.bpProb.uVertexVect[pl1[i].i-1], rna.bpProb.uVertexVect[pl1[i].j-1], pl1[i].p);
+		}
+
+		RNASeqs.push_back(rna);
+	}
 
     return 0;
 }
