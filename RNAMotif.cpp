@@ -83,8 +83,15 @@ typedef seqan::String<TMapDGraph > TMapDGraphStr;
 typedef seqan::Map<TPosition, TUVertexDescriptor> TMapUGraph;
 typedef seqan::String<TMapUGraph > TMapUGraphStr;
 
-typedef seqan::RnaString TSequence;
+typedef seqan::String<seqan::Rna> TSequence;
+typedef seqan::StringSet<TSequence> TStringSet;
+typedef seqan::StringSet<TSequence, seqan::Dependent<> > TDepStringSet;
+typedef seqan::Graph<seqan::Alignment<TDepStringSet, void, seqan::WithoutEdgeId> > TAlignGraph;
+typedef typename seqan::VertexDescriptor<TAlignGraph>::Type TVertexDescriptor;
+
 typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;      // align type
+typedef seqan::Row<TAlign>::Type TRow;
+typedef seqan::Iterator<TRow>::Type TRowIterator;
 
 struct vectGraphElement {
 	std::vector<TUVertexDescriptor > uVertexVect;
@@ -158,7 +165,7 @@ struct StockholmRecord {
 // Functions
 // ==========================================================================
 
-void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record) {
+void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAlign& alignment) {
 	// read Stockholm format 
 	std::ifstream inStream(file, std::ios::in);
 
@@ -213,24 +220,50 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record) {
 			std::string name, sequence;
 			iss >> name >> sequence;
 			record.seqences[name] = sequence;
-
 		}
 	}while (std::getline(inStream, line));
 
-	/*for (auto elem : record.header)
-	{
-		std::cout << elem.first << " " << elem.second << "\n";
-	}*/
+	seqan::resize(seqan::rows(alignment), record.seqences.size());
 
-//	for (auto elem : record.seqences)
-//	{
-//		std::cout << elem.first << " " << elem.second << "\n";
-//	}
-
-	/*for (auto elem : record.seqence_information)
+	int i = 0;
+	for (auto elem : record.seqences)
 	{
-		std::cout << elem.first << " " << elem.second << "\n";
-	}*/
+		// erase all gaps from the string and insert it into the alignment
+		std::string tmp = elem.second;
+		tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
+		seqan::assignSource(seqan::row(alignment, i), seqan::RnaString(tmp));
+	    TRow & row = seqan::row(alignment, i++);
+
+		// find all gap positions in the sequence and insert into alignment
+	    int offset = 0;
+		size_t pos = elem.second.find("-", 0);
+		while (pos != std::string::npos){
+			// find how long the gap is
+			int len = 1;
+			while (elem.second[pos+len] == '-') ++len;
+		    seqan::insertGaps(row, pos+offset, len);
+		    pos = elem.second.find("-", pos+len);
+		    offset += len;
+		}
+
+	}
+}
+
+//template <typename TSequence>
+void toAlignGraph(TAlign& alignment, TAlignGraph & alignGraph){
+
+	return;
+}
+
+// 0 - no bracket. -1 - open bracket. 1 - closing bracket
+int isBracket(char c){
+	if (c == '(' || c == '[' || c == '{')
+		return -1;
+
+	if (c == ')' || c == ']' || c == '}')
+		return 1;
+
+	return 0;
 }
 
 // --------------------------------------------------------------------------
@@ -315,42 +348,48 @@ int main(int argc, char const ** argv)
 
     // read the stockholm alignment
 	StockholmRecord<seqan::Rna> record;
-	read_Stockholm_file(seqan::toCString(options.rna_file), record);
+	TAlign alignment;
+	read_Stockholm_file(seqan::toCString(options.rna_file), record, alignment);
 
-	std::cout << "Structure prediction\n";
+    // the alignment graph representing the read sequence alignment
+   	TAlignGraph RNAalignGraph;
+   	toAlignGraph(alignment, RNAalignGraph);
 
-	std::vector<TRnaStruct> RNASeqs;
+   	std::cout << alignment << "\n";
 
+   	std::vector<TRnaStruct> RNASeqs;
 
+	// build interaction graphs for each sequence
 	for (auto elem : record.seqences)
 	{
+		TRnaStruct rna;
+
 		size_t seq_size = elem.second.length();
 
 		// create RNA data structure
-		TRnaStruct rna;
 		rna.id = seqan::CharString(elem.first);		// sequence name/id
 		rna.seq = seqan::RnaString(elem.second);	// sequence
 
-		// save sequence structure
-		seqan::appendValue(rna.structPairMate, fixedStructElement<TString, TPosition>());
-		//rna.structPairMate[0].seqPos
-
+		std::cout << rna.seq << "\n";
 
 		// add new vertex for each base and save the vertex references
 		rna.bpProb.uVertexVect.resize(seq_size);
+
 		for (unsigned i=0; i < seq_size; ++i){
+			// add interaction edge in the interaction graph
 			rna.bpProb.uVertexVect[i] = seqan::addVertex(rna.bpProb.interGraph);
 		}
-
 
 		// create RNAlib data structures
 		const char * seq = elem.second.c_str();
 		char  *structure = (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
+		char  *weird_structure = (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
 		vrna_fold_compound_t *vc = vrna_fold_compound(seq, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 		// predict secondary structure (will create base pair probs in compound)
-		double gibbs = (double)vrna_pf(vc, structure);
-		printf("%s %zu\n%s (%6.2f)\n", seq, seq_size, structure, gibbs);
+		double mfe = (double)vrna_mfe(vc, structure);
+		double gibbs = (double)vrna_pf(vc, weird_structure);
+		printf("%s %zu\n%s\n%s (%6.2f)\n", seq, seq_size, structure, weird_structure, gibbs);
 
 		// extract base pair probabilities from fold compound
 		vrna_plist_t *pl1, *ptr;
@@ -362,11 +401,51 @@ int main(int argc, char const ** argv)
 		for(size = 0, ptr = pl1; ptr->i; size++, ptr++);
 
 		// store base pair prob. in the interaction graph
-		for(unsigned i=0; i<size;++i)
-		{
-			//std::cout << i << "_"<< pl1[i].i <<":"<< pl1[i].j <<"|"<< pl1[i].p <<"|"<< pl1[i].type << "\n";
+		for(unsigned i=0; i<size;++i){
 			seqan::addEdge(rna.bpProb.interGraph, rna.bpProb.uVertexVect[pl1[i].i-1], rna.bpProb.uVertexVect[pl1[i].j-1], pl1[i].p);
 		}
+
+		// save sequence structure
+		short * struc_table = vrna_ptable(structure);
+		seqan::appendValue(rna.structPairMate, fixedStructElement<TString, TPosition>());
+		for (size_t i=0; i < seq_size; i++){
+			if (struc_table[i] != 0){
+				seqan::appendValue(rna.structPairMate[0].seqPos, i);
+				seqan::appendValue(rna.structPairMate[0].interPos, struc_table[i]);
+			}
+		}
+
+		// save sequence structure
+/*		std::stack<TPosition> openStack;
+		seqan::appendValue(rna.structPairMate, fixedStructElement<TString, TPosition>());
+		for (size_t i=0; i < seq_size; i++){
+			int bracketType = isBracket(structure[i]);
+			// opening bracket
+			if (bracketType < 0){
+				// save opening bracket position
+				openStack.push(seqan::length(rna.structPairMate[0].seqPos));
+				seqan::appendValue(rna.structPairMate[0].seqPos, i);
+
+				// just reserve space for the interaction position
+				seqan::appendValue(rna.structPairMate[0].interPos, 0);
+			}
+			// closing bracket
+			else if (bracketType > 0){
+				// save closing bracket at corresponding pos. in interPos
+				if (openStack.empty())
+					std::cout << "Bracket mismatch at pos " << i << " : " << structure[i] << "\n";
+
+				TPosition openMate = openStack.top();
+				openStack.pop();
+
+				rna.structPairMate[0].interPos[openMate] = i;
+			}
+		}*/
+
+		//std::cout << seqan::length(rna.structPairMate[0].seqPos) << " " << seqan::length(rna.structPairMate[0].interPos) << "\n";
+
+		std::cout << "\n";
+		//rna.structPairMate[0].seqPos
 
 		RNASeqs.push_back(rna);
 	}
