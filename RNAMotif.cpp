@@ -186,8 +186,9 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 		std::string tag, feature, value;
 		std::istringstream iss(line);
 		
-		// skip if line is a newline
-		if (line.find_first_not_of("\t\r\n ") == std::string::npos){
+		// skip if line is an empty line, a newline or one of those \\ lines
+		if (line.find_first_not_of("\t\r\n/ ") == std::string::npos){
+			std::cout << line << "' is newline\n";
 			continue;
 		}
 
@@ -241,7 +242,8 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 			// find how long the gap is
 			int len = 1;
 			while (elem.second[pos+len] == '-') ++len;
-		    seqan::insertGaps(row, pos+offset, len);
+			//std::cout << pos << " " << len << " " << offset << "\n";
+		    seqan::insertGaps(row, pos, len);
 		    pos = elem.second.find("-", pos+len);
 		    offset += len;
 		}
@@ -365,6 +367,8 @@ int main(int argc, char const ** argv)
 		TRnaStruct rna;
 
 		size_t seq_size = elem.second.length();
+
+		std::cout << seq_size << "\n";
 
 		// create RNA data structure
 		rna.id = seqan::CharString(elem.first);		// sequence name/id
