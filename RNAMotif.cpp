@@ -48,6 +48,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Import RNAlib. 'extern "C"', since it's a C library
 extern "C"{
 	#include  <ViennaRNA/data_structures.h>
 	#include  <ViennaRNA/mfe.h>
@@ -56,6 +57,7 @@ extern "C"{
 	#include  <ViennaRNA/eval.h>
 	#include  <ViennaRNA/fold.h>
 	#include  <ViennaRNA/part_func.h>
+	#include  <ViennaRNA/alifold.h>
 }
 
 // ==========================================================================
@@ -188,7 +190,6 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 		
 		// skip if line is an empty line, a newline or one of those \\ lines
 		if (line.find_first_not_of("\t\r\n/ ") == std::string::npos){
-			std::cout << line << "' is newline\n";
 			continue;
 		}
 
@@ -229,6 +230,8 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 	int i = 0;
 	for (auto elem : record.seqences)
 	{
+		//TODO: remove gaps from sequences. Those will be conserved in the align-object.
+
 		// erase all gaps from the string and insert it into the alignment
 		std::string tmp = elem.second;
 		tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
@@ -357,13 +360,27 @@ int main(int argc, char const ** argv)
    	TAlignGraph RNAalignGraph;
    	toAlignGraph(alignment, RNAalignGraph);
 
-   	std::cout << alignment << "\n";
+   	//std::cout << alignment << "\n";
 
+
+   	// compute consensus structure
    	std::vector<TRnaStruct> RNASeqs;
+   	const char** seqs = new const char*[record.seqences.size()+1];
+   	seqs[record.seqences.size()] = 0;
+
+   	int i = 0;
+
+   	//char* seqs = [record.seqences.size()];
 
 	// build interaction graphs for each sequence
 	for (auto elem : record.seqences)
 	{
+		// TODO: Get row out of the alignment object? (not always Stockholm)
+		// does elem.second live as long as seqs?
+		seqs[i++] = elem.second.c_str();
+
+		//std::cout << seqs[i-1] << std::endl;
+
 		TRnaStruct rna;
 
 		size_t seq_size = elem.second.length();
@@ -419,40 +436,21 @@ int main(int argc, char const ** argv)
 			}
 		}
 
-		// save sequence structure
-/*		std::stack<TPosition> openStack;
-		seqan::appendValue(rna.structPairMate, fixedStructElement<TString, TPosition>());
-		for (size_t i=0; i < seq_size; i++){
-			int bracketType = isBracket(structure[i]);
-			// opening bracket
-			if (bracketType < 0){
-				// save opening bracket position
-				openStack.push(seqan::length(rna.structPairMate[0].seqPos));
-				seqan::appendValue(rna.structPairMate[0].seqPos, i);
-
-				// just reserve space for the interaction position
-				seqan::appendValue(rna.structPairMate[0].interPos, 0);
-			}
-			// closing bracket
-			else if (bracketType > 0){
-				// save closing bracket at corresponding pos. in interPos
-				if (openStack.empty())
-					std::cout << "Bracket mismatch at pos " << i << " : " << structure[i] << "\n";
-
-				TPosition openMate = openStack.top();
-				openStack.pop();
-
-				rna.structPairMate[0].interPos[openMate] = i;
-			}
-		}*/
-
-		//std::cout << seqan::length(rna.structPairMate[0].seqPos) << " " << seqan::length(rna.structPairMate[0].interPos) << "\n";
-
 		std::cout << "\n";
-		//rna.structPairMate[0].seqPos
 
 		RNASeqs.push_back(rna);
 	}
+
+	char *structure = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
+	vrna_alifold(seqs, structure);
+
+
+	std::cout << "Rfam consensus:\n" << record.seqence_information["SS_cons"] << std::endl;
+	std::cout << "Vienna consensus:\n" << structure << std::endl;
+
+	vrna_plist_t** pl = new vrna_plist_t*[record.seqences.size()];
+	vrna_pf_alifold(seqs, structure, pl);
+	std::cout << "Weird consensus:\n" << structure << std::endl;
 
     return 0;
 }
