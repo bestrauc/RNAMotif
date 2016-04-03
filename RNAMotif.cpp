@@ -42,7 +42,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <map>
+#include <unordered_map>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,32 +58,38 @@ extern "C"{
 	#include  <ViennaRNA/fold.h>
 	#include  <ViennaRNA/part_func.h>
 	#include  <ViennaRNA/alifold.h>
+	#include  <ViennaRNA/constraints.h>
 }
 
 // ==========================================================================
 // Classes
 // ==========================================================================
 
+// simplify WUSS notation for use in RNAlib
+std::unordered_map<char, char> WUSS_Table =
+	{
+	 {'(', '('}, {')', ')'}, // (
+	 {'<', '('}, {'>', ')'},
+	 {'[', '('}, {']', ')'},
+	 {'{', '('}, {'}', ')'},
+	 {',', '.'}, {'_', '.'},
+	 {'-', '.'}, {':', '.'},
+	 {'~', '.'}
+	};
+
 //types used in the program
 typedef unsigned TPosition;
 typedef float TScoreValue;
 typedef seqan::CharString TString;
 typedef float TBioval;
-typedef std::map<TPosition, TScoreValue> TMap;
+typedef std::unordered_map<TPosition, TScoreValue> TMap;
 typedef seqan::String<TMap > TMapLine;
 
 typedef float TCargo;
 typedef seqan::Graph<seqan::Directed<TCargo> > TDgraph;
 typedef seqan::VertexDescriptor<TDgraph>::Type TDVertexDescriptor;
-typedef seqan::EdgeDescriptor<TDgraph>::Type TDEdgeDescriptor;
 typedef seqan::Graph<seqan::Undirected<TCargo> > TUgraph;
 typedef seqan::VertexDescriptor<TUgraph>::Type TUVertexDescriptor;
-typedef seqan::EdgeDescriptor<TUgraph>::Type TUEdgeDescriptor;
-
-typedef seqan::Map<TPosition, TDVertexDescriptor> TMapDGraph;
-typedef seqan::String<TMapDGraph > TMapDGraphStr;
-typedef seqan::Map<TPosition, TUVertexDescriptor> TMapUGraph;
-typedef seqan::String<TMapUGraph > TMapUGraphStr;
 
 typedef seqan::String<seqan::Rna> TSequence;
 typedef seqan::StringSet<TSequence> TStringSet;
@@ -142,6 +148,7 @@ struct AppOptions
 {
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
+    bool constrain;
 
     // The first (and only) argument of the program is stored here.
     seqan::CharString rna_file;
@@ -151,14 +158,23 @@ struct AppOptions
     {}
 };
 
+// Alphabets usually found in Stockholm format files are Rna or AminoAcid
 template <typename TAlphabet>
 struct StockholmRecord {
+	// SeqAn specific data	==========================
+	// store the alignment given in the Stockholm file
+	typedef seqan::String<TAlphabet> TSequence;
+	typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;
+
+	TAlign alignment;
+
+	// Raw string data		===========================
 	// header (GF tags -> tag value)
-	std::map<std ::string, std::string > header;
+	std::unordered_map<std ::string, std::string > header;
 	// seqence names -> sequence maps
-	std::map<std::string, std::string > seqences;
+	std::unordered_map<std::string, std::string > seqences;
 	// per column (GC) -> annotation string
-	std::map<std::string, std::string > seqence_information;
+	std::unordered_map<std::string, std::string > seqence_information;
 
 	//TODO: Maybe support per-sequence (GS) and per-residue (GR) annotation
 };
@@ -167,7 +183,7 @@ struct StockholmRecord {
 // Functions
 // ==========================================================================
 
-void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAlign& alignment) {
+void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record) {
 	// read Stockholm format 
 	std::ifstream inStream(file, std::ios::in);
 
@@ -188,7 +204,7 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 		std::string tag, feature, value;
 		std::istringstream iss(line);
 		
-		// skip if line is an empty line, a newline or one of those \\ lines
+		// skip if line is an empty line, a newline or the alignment end \\ line
 		if (line.find_first_not_of("\t\r\n/ ") == std::string::npos){
 			continue;
 		}
@@ -225,7 +241,7 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 		}
 	}while (std::getline(inStream, line));
 
-	seqan::resize(seqan::rows(alignment), record.seqences.size());
+	seqan::resize(seqan::rows(record.alignment), record.seqences.size());
 
 	int i = 0;
 	for (auto elem : record.seqences)
@@ -235,8 +251,8 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 		// erase all gaps from the string and insert it into the alignment
 		std::string tmp = elem.second;
 		tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
-		seqan::assignSource(seqan::row(alignment, i), seqan::RnaString(tmp));
-	    TRow & row = seqan::row(alignment, i++);
+		seqan::assignSource(seqan::row(record.alignment, i), seqan::RnaString(tmp));
+	    TRow & row = seqan::row(record.alignment, i++);
 
 		// find all gap positions in the sequence and insert into alignment
 	    int offset = 0;
@@ -254,10 +270,97 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record, 	TAli
 	}
 }
 
-//template <typename TSequence>
-void toAlignGraph(TAlign& alignment, TAlignGraph & alignGraph){
+// convert Rfam's WUSS structure notation to RNAlib's pseudo-bracket notation
+// NOTE: RNAlib's pseudo-bracket notation cannot handle pseudoknots
+void WUSStoPseudoBracket(std::string& structure, char* pseudoBracketString){
+	int i=0;
 
-	return;
+	for (char& c: structure){
+		auto iter = WUSS_Table.find(c);
+		char replace = (iter == WUSS_Table.end()) ? '.' : iter->second;
+		pseudoBracketString[i++] = replace;
+	}
+
+	// terminate pseudo bracket string with 0
+	pseudoBracketString[i] = 0;
+}
+
+void createInteractions(TRnaStruct &rna, std::string& seq_str, char * constraint = NULL){
+	size_t seq_size = seq_str.length();
+
+	// add new vertex for each base and save the vertex references
+	rna.bpProb.uVertexVect.resize(seq_size);
+
+	for (unsigned i=0; i < seq_size; ++i){
+		// add interaction edge in the interaction graph
+		rna.bpProb.uVertexVect[i] = seqan::addVertex(rna.bpProb.interGraph);
+	}
+
+	// create RNAlib data structures
+	const char * seq = seq_str.c_str();
+	char  *structure 		= (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
+	char  *weird_structure 	= (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
+	vrna_fold_compound_t *vc = vrna_fold_compound(seq, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+
+	// add constraints if available
+	if (constraint)
+		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
+
+	// predict secondary structure (will create base pair probs in compound)
+	double mfe 	 = (double)vrna_mfe(vc, structure);
+	double gibbs = (double)vrna_pf(vc, weird_structure);
+	printf("%s %zu\n%s\n%s (%6.2f)\n", seq, seq_size, structure, weird_structure, gibbs);
+
+	// extract base pair probabilities from fold compound
+	vrna_plist_t *pl1, *ptr;
+	pl1 = vrna_plist_from_probs(vc, 0.05);
+
+	// get size of probability list (a full list, if not filtered with a threshold,
+	// contains the upper half of the n x n probability matrix (size (n x n)/2 - n)
+	unsigned size;
+	for(size = 0, ptr = pl1; ptr->i; size++, ptr++);
+
+	// store base pair prob. in the interaction graph
+	for(unsigned i=0; i<size;++i){
+		seqan::addEdge(rna.bpProb.interGraph, rna.bpProb.uVertexVect[pl1[i].i-1], rna.bpProb.uVertexVect[pl1[i].j-1], pl1[i].p);
+	}
+
+	// save sequence structure
+	short * struc_table = vrna_ptable(structure);
+	seqan::appendValue(rna.structPairMate, fixedStructElement<TString, TPosition>());
+	for (size_t i=0; i < seq_size; i++){
+		if (struc_table[i] != 0){
+			seqan::appendValue(rna.structPairMate[0].seqPos, i);
+			seqan::appendValue(rna.structPairMate[0].interPos, struc_table[i]);
+		}
+	}
+
+	free(structure);
+	free(weird_structure);
+	vrna_fold_compound_free(vc);
+}
+
+void getConsensusStructure(const char** seqs, char* structure, char* constraint = NULL){
+	vrna_fold_compound_t *vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+
+	// add constraints if available
+	if (constraint){
+		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
+		std::cout << "Rfam converted:\n" << constraint << std::endl;
+	}
+	vrna_mfe(vc, structure);
+	vrna_fold_compound_free(vc);
+
+	std::cout << "Vienna consensus:\n" << structure << std::endl;
+
+	vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+	if (constraint)
+		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
+
+	vrna_pf(vc, structure);
+	std::cout << "Weird consensus:\n" << structure << std::endl;
+
+	vrna_fold_compound_free(vc);
 }
 
 // 0 - no bracket. -1 - open bracket. 1 - closing bracket
@@ -286,12 +389,13 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     setDate(parser, __DATE__);
 
     // Define usage line and long description.
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] \"\\fIMULTIPLE ALIGNMENT\\fP\"");
-    addDescription(parser, "Generate a searchable RNA motif from a multiple structural RNA alignment.");
+    addUsageLine(parser, "[\\fIOPTIONS\\fP] <\\fISEED ALIGNMENT\\fP>");
+    addDescription(parser, "Generate a searchable RNA motif from a seed alignment.");
 
     // We require one argument.
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
 
+    addOption(parser, seqan::ArgParseOption("co", "constrain", "Constrain individual structures with the seed consensus structure."));
     addOption(parser, seqan::ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
     addOption(parser, seqan::ArgParseOption("v", "verbose", "Enable verbose output."));
     addOption(parser, seqan::ArgParseOption("vv", "very-verbose", "Enable very verbose output."));
@@ -307,6 +411,8 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     // Only extract  options if the program will continue after parseCommandLine()
     if (res != seqan::ArgumentParser::PARSE_OK)
         return res;
+
+    options.constrain = isSet(parser, "constrain");
 
     // Extract option values.
     if (isSet(parser, "quiet"))
@@ -353,24 +459,24 @@ int main(int argc, char const ** argv)
 
     // read the stockholm alignment
 	StockholmRecord<seqan::Rna> record;
-	TAlign alignment;
-	read_Stockholm_file(seqan::toCString(options.rna_file), record, alignment);
-
-    // the alignment graph representing the read sequence alignment
-   	TAlignGraph RNAalignGraph;
-   	toAlignGraph(alignment, RNAalignGraph);
-
-   	//std::cout << alignment << "\n";
-
+	read_Stockholm_file(seqan::toCString(options.rna_file), record);
 
    	// compute consensus structure
    	std::vector<TRnaStruct> RNASeqs;
    	const char** seqs = new const char*[record.seqences.size()+1];
    	seqs[record.seqences.size()] = 0;
 
+	// convert Rfam WUSS structure to normal brackets
+	char *bracket = NULL;
+	if (options.constrain){
+		bracket = new char[record.seqence_information["SS_cons"].length() + 1];
+		WUSStoPseudoBracket(record.seqence_information["SS_cons"], bracket);
+	}
+
    	int i = 0;
 
-   	//char* seqs = [record.seqences.size()];
+   	//typedef seqan::StringSetType<StockholmRecord::TAlign> TStringSet;
+   	//TStringSet& alignStrings = seqan::stringSet(record.alignment);
 
 	// build interaction graphs for each sequence
 	for (auto elem : record.seqences)
@@ -379,13 +485,7 @@ int main(int argc, char const ** argv)
 		// does elem.second live as long as seqs?
 		seqs[i++] = elem.second.c_str();
 
-		//std::cout << seqs[i-1] << std::endl;
-
 		TRnaStruct rna;
-
-		size_t seq_size = elem.second.length();
-
-		std::cout << seq_size << "\n";
 
 		// create RNA data structure
 		rna.id = seqan::CharString(elem.first);		// sequence name/id
@@ -393,64 +493,20 @@ int main(int argc, char const ** argv)
 
 		std::cout << rna.seq << "\n";
 
-		// add new vertex for each base and save the vertex references
-		rna.bpProb.uVertexVect.resize(seq_size);
-
-		for (unsigned i=0; i < seq_size; ++i){
-			// add interaction edge in the interaction graph
-			rna.bpProb.uVertexVect[i] = seqan::addVertex(rna.bpProb.interGraph);
-		}
-
-		// create RNAlib data structures
-		const char * seq = elem.second.c_str();
-		char  *structure = (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
-		char  *weird_structure = (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
-		vrna_fold_compound_t *vc = vrna_fold_compound(seq, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
-
-		// predict secondary structure (will create base pair probs in compound)
-		double mfe = (double)vrna_mfe(vc, structure);
-		double gibbs = (double)vrna_pf(vc, weird_structure);
-		printf("%s %zu\n%s\n%s (%6.2f)\n", seq, seq_size, structure, weird_structure, gibbs);
-
-		// extract base pair probabilities from fold compound
-		vrna_plist_t *pl1, *ptr;
-		pl1 = vrna_plist_from_probs(vc, 0.05);
-
-		// get size of probability list (a full list, if not filtered with a threshold,
-		// contains the upper half of the n x n probability matrix (size (n x n)/2 - n)
-		unsigned size;
-		for(size = 0, ptr = pl1; ptr->i; size++, ptr++);
-
-		// store base pair prob. in the interaction graph
-		for(unsigned i=0; i<size;++i){
-			seqan::addEdge(rna.bpProb.interGraph, rna.bpProb.uVertexVect[pl1[i].i-1], rna.bpProb.uVertexVect[pl1[i].j-1], pl1[i].p);
-		}
-
-		// save sequence structure
-		short * struc_table = vrna_ptable(structure);
-		seqan::appendValue(rna.structPairMate, fixedStructElement<TString, TPosition>());
-		for (size_t i=0; i < seq_size; i++){
-			if (struc_table[i] != 0){
-				seqan::appendValue(rna.structPairMate[0].seqPos, i);
-				seqan::appendValue(rna.structPairMate[0].interPos, struc_table[i]);
-			}
-		}
+		createInteractions(rna, elem.second, bracket);
 
 		std::cout << "\n";
 
 		RNASeqs.push_back(rna);
 	}
 
-	char *structure = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
-	vrna_alifold(seqs, structure);
-
-
+	// create structure for the whole multiple alignment
+	char *structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
 	std::cout << "Rfam consensus:\n" << record.seqence_information["SS_cons"] << std::endl;
-	std::cout << "Vienna consensus:\n" << structure << std::endl;
+	getConsensusStructure(seqs, structure, bracket);
 
-	vrna_plist_t** pl = new vrna_plist_t*[record.seqences.size()];
-	vrna_pf_alifold(seqs, structure, pl);
-	std::cout << "Weird consensus:\n" << structure << std::endl;
+	free(structure);
+	free(bracket);
 
     return 0;
 }
