@@ -285,7 +285,7 @@ void WUSStoPseudoBracket(std::string& structure, char* pseudoBracketString){
 	pseudoBracketString[i] = 0;
 }
 
-void createInteractions(TRnaStruct &rna, std::string& seq_str, char * constraint = NULL){
+void createInteractions(TRnaStruct &rna, std::string& seq_str, const char * constraint = NULL){
 	size_t seq_size = seq_str.length();
 
 	// add new vertex for each base and save the vertex references
@@ -309,7 +309,8 @@ void createInteractions(TRnaStruct &rna, std::string& seq_str, char * constraint
 	// predict secondary structure (will create base pair probs in compound)
 	double mfe 	 = (double)vrna_mfe(vc, structure);
 	double gibbs = (double)vrna_pf(vc, weird_structure);
-	printf("%s %zu\n%s\n%s (%6.2f)\n", seq, seq_size, structure, weird_structure, gibbs);
+	//printf("%s %zu\n%s\n%s (%6.2f)\n", seq, seq_size, structure, weird_structure, gibbs);
+	printf("%s %zu\n%s (%6.2f)\n", seq, seq_size, weird_structure, gibbs);
 
 	// extract base pair probabilities from fold compound
 	vrna_plist_t *pl1, *ptr;
@@ -340,7 +341,7 @@ void createInteractions(TRnaStruct &rna, std::string& seq_str, char * constraint
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(const char** seqs, char* structure, char* constraint = NULL){
+void getConsensusStructure(const char** seqs, char* structure, const char* constraint = NULL){
 	vrna_fold_compound_t *vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 	// add constraints if available
@@ -348,6 +349,7 @@ void getConsensusStructure(const char** seqs, char* structure, char* constraint 
 		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
 		std::cout << "Rfam converted:\n" << constraint << std::endl;
 	}
+
 	vrna_mfe(vc, structure);
 	vrna_fold_compound_free(vc);
 
@@ -361,17 +363,6 @@ void getConsensusStructure(const char** seqs, char* structure, char* constraint 
 	std::cout << "Weird consensus:\n" << structure << std::endl;
 
 	vrna_fold_compound_free(vc);
-}
-
-// 0 - no bracket. -1 - open bracket. 1 - closing bracket
-int isBracket(char c){
-	if (c == '(' || c == '[' || c == '{')
-		return -1;
-
-	if (c == ')' || c == ']' || c == '}')
-		return 1;
-
-	return 0;
 }
 
 // --------------------------------------------------------------------------
@@ -454,6 +445,7 @@ int main(int argc, char const ** argv)
         std::cout << "__OPTIONS____________________________________________________________________\n"
                   << '\n'
                   << "VERBOSITY\t" << options.verbosity << '\n'
+                  << "CONSTRAINT\t" << options.constrain << '\n'
                   << "RNA      \t" << options.rna_file << "\n\n";
     }
 
@@ -461,9 +453,11 @@ int main(int argc, char const ** argv)
 	StockholmRecord<seqan::Rna> record;
 	read_Stockholm_file(seqan::toCString(options.rna_file), record);
 
+	std::cout << record.alignment << "\n";
+
    	// compute consensus structure
    	std::vector<TRnaStruct> RNASeqs;
-   	const char** seqs = new const char*[record.seqences.size()+1];
+   	char** seqs = new char*[record.seqences.size()+1];
    	seqs[record.seqences.size()] = 0;
 
 	// convert Rfam WUSS structure to normal brackets
@@ -482,8 +476,10 @@ int main(int argc, char const ** argv)
 	for (auto elem : record.seqences)
 	{
 		// TODO: Get row out of the alignment object? (not always Stockholm)
-		// does elem.second live as long as seqs?
-		seqs[i++] = elem.second.c_str();
+		seqs[i] = new char[elem.second.size()+1];
+		std::strcpy(seqs[i++], elem.second.c_str());
+
+		//std::cout << seqs[i-1] << "\n";
 
 		TRnaStruct rna;
 
@@ -491,11 +487,11 @@ int main(int argc, char const ** argv)
 		rna.id = seqan::CharString(elem.first);		// sequence name/id
 		rna.seq = seqan::RnaString(elem.second);	// sequence
 
-		std::cout << rna.seq << "\n";
+		//std::cout << rna.seq << "\n";
 
 		createInteractions(rna, elem.second, bracket);
 
-		std::cout << "\n";
+		//std::cout << "\n";
 
 		RNASeqs.push_back(rna);
 	}
@@ -503,7 +499,7 @@ int main(int argc, char const ** argv)
 	// create structure for the whole multiple alignment
 	char *structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
 	std::cout << "Rfam consensus:\n" << record.seqence_information["SS_cons"] << std::endl;
-	getConsensusStructure(seqs, structure, bracket);
+	getConsensusStructure((const char**)seqs, structure, bracket);
 
 	free(structure);
 	free(bracket);
