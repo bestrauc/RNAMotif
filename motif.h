@@ -1,5 +1,5 @@
 // ==========================================================================
-//                             motif_structures.h
+//                                  motif.h
 // ==========================================================================
 // Copyright (c) 2006-2016, Knut Reinert, FU Berlin
 // All rights reserved.
@@ -32,8 +32,10 @@
 // Author: Your Name <your.email@example.net>
 // ==========================================================================
 
-#ifndef APPS_RNAMOTIF_MOTIF_STRUCTURES_H_
-#define APPS_RNAMOTIF_MOTIF_STRUCTURES_H_
+#ifndef APPS_RNAMOTIF_MOTIF_H_
+#define APPS_RNAMOTIF_MOTIF_H_
+
+#include "motif_structures.h"
 
 // ============================================================================
 // Forwards
@@ -43,71 +45,6 @@
 // Tags, Classes, Enums
 // ============================================================================
 
-// Types for the alignment
-typedef seqan::String<seqan::Rna> TSequence;
-typedef seqan::StringSet<TSequence> TStringSet;
-typedef seqan::StringSet<TSequence, seqan::Dependent<> > TDepStringSet;
-typedef seqan::Graph<seqan::Alignment<TDepStringSet, void, seqan::WithoutEdgeId> > TAlignGraph;
-
-typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;      // align type
-typedef seqan::Row<TAlign>::Type TRow;
-typedef seqan::Iterator<TRow>::Type TRowIterator;
-
-
-// Types for the interaction graphs for each sequence
-typedef float TCargo;
-typedef seqan::Graph<seqan::Undirected<TCargo> > TUgraph;
-typedef seqan::VertexDescriptor<TUgraph>::Type TUVertexDescriptor;
-
-struct vectGraphElement {
-	std::vector<TUVertexDescriptor > uVertexVect;
-	TUgraph interGraph; // this graph represents all the computed interaction edges
-};
-
-typedef std::vector<int> TInteractionPairs;
-typedef std::vector<std::pair<int, int > > THairLoops;
-
-// Alphabets usually found in Stockholm format files are Rna or AminoAcid
-template <typename TAlphabet>
-struct StockholmRecord {
-	// SeqAn specific data	==========================
-	// store the alignment given in the Stockholm file
-	typedef seqan::String<TAlphabet> TSequence;
-	typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;
-
-	TAlign alignment;
-
-	// Raw string data		===========================
-	// header (GF tags -> tag value)
-	std::unordered_map<std ::string, std::string > header;
-	// seqence names -> sequence maps
-	std::unordered_map<std::string, std::string > seqences;
-	// per column (GC) -> annotation string
-	std::unordered_map<std::string, std::string > seqence_information;
-
-	//TODO: Maybe support per-sequence (GS) and per-residue (GR) annotation
-};
-
-struct InteractionGraph {
-	std::vector<TUVertexDescriptor > vertices;
-	TUgraph graph; // this graph represents all the computed interaction edges
-};
-
-template <typename TAlign>
-struct Motif{
-	// stores interaction information for the N sequences in a N-vector
-	// TODO: graph
-	std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
-	std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
-
-	// the alignment structure of the seed RNA family
-	TAlign seedAlignment;
-
-	// the regions identified as hairpins. Nested hairpin structures are stored as successive pairs.
-	std::vector<THairLoops> hairpinLoops;
-
-};
-
 // ============================================================================
 // Metafunctions
 // ============================================================================
@@ -116,4 +53,4 @@ struct Motif{
 // Functions
 // ============================================================================
 
-#endif  // #ifndef APPS_RNAMOTIF_MOTIF_STRUCTURES_H_
+#endif  // #ifndef APPS_RNAMOTIF_MOTIF_H_

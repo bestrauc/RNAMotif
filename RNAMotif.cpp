@@ -52,57 +52,12 @@
 
 // App headers
 #include "RNAlib_utils.h"
-#include "motif_structures.h"
+#include "motif.h"
 
 // ==========================================================================
 // Classes
 // ==========================================================================
 
-//types used in the program
-typedef unsigned TPosition;
-typedef float TScoreValue;
-typedef seqan::CharString TString;
-typedef float TBioval;
-typedef std::unordered_map<TPosition, TScoreValue> TMap;
-typedef seqan::String<TMap > TMapLine;
-
-typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;      // align type
-typedef seqan::Row<TAlign>::Type TRow;
-typedef seqan::Iterator<TRow>::Type TRowIterator;
-
-struct vectGraphElement {
-	std::vector<TUVertexDescriptor > uVertexVect;
-	TUgraph interGraph; // this graph represents all the computed interaction edges
-};
-
-template <typename TString, typename TPosition>
-struct fixedStructElement {
-	TString method; // place the method and parameters used to compute the structure
-//	seqan::String<unsigned> structure;
-	seqan::String<TPosition> seqPos;
-	seqan::String<TPosition> interPos;
-};
-template <typename TString, typename TBioval>
-struct bioValStructElement {
-	TString method; // place the method and parameters used to compute the structure
-//	seqan::String<TBioval> val;
-	seqan::String<TBioval> val;
-};
-
-template <typename TSequence, typename TString, typename TPosition, typename TBioval, typename TMapLine>
-struct RnaStructSeq {
-	TSequence seq;  // from fasta input
-	TString qual;  // from fasta input
-	TString id;  // from fasta input
-	TString info; // raw info from bpseq or ebpseq input
-	seqan::String<fixedStructElement<TString, TPosition> > structPairMate; //TODO use this field to collect all the structural information of this sequence
-	seqan::String<bioValStructElement<TString, TBioval> > structBioVal;
-	vectGraphElement bpProb;
-//	seqan::String<std::map<TPosition, TValue> > *bpProb;
-//	TMapLine *bpProb;
-};
-
-typedef RnaStructSeq<TSequence, TString, TPosition, TBioval, TMapLine> TRnaStruct;
 // --------------------------------------------------------------------------
 // Class AppOptions
 // --------------------------------------------------------------------------
@@ -121,7 +76,8 @@ struct AppOptions
     seqan::CharString rna_file;
 
     AppOptions() :
-        verbosity(1)
+        verbosity(1),
+		constrain(0)
     {}
 };
 
@@ -307,7 +263,6 @@ int main(int argc, char const ** argv)
 	std::cout << record.alignment << "\n";
 
    	// compute consensus structure
-   	std::vector<TRnaStruct> RNASeqs;
    	char** seqs = new char*[record.seqences.size()+1];
    	seqs[record.seqences.size()] = 0;
 
@@ -335,17 +290,11 @@ int main(int argc, char const ** argv)
 		seqs[i] = new char[elem.second.size()+1];
 		std::strcpy(seqs[i], elem.second.c_str());
 
-		TRnaStruct rna;
-
-		// create RNA data structure
-		rna.id = seqan::CharString(elem.first);		// sequence name/id
-		rna.seq = seqan::RnaString(elem.second);	// sequence
-
-		createInteractions(rna_motif.interactionGraphs[i], rna_motif.interactionPairs[i], elem.second, bracket);
+		createInteractions(rna_motif.interactionGraphs[i],
+						   rna_motif.interactionPairs[i],
+						   elem.second, bracket);
 
 		i++;
-
-		RNASeqs.push_back(rna);
 	}
 
 	// create structure for the whole multiple alignment

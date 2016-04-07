@@ -30,7 +30,7 @@ include_directories (SYSTEM ${SEQAN_INCLUDE_DIRS_DEPS})
 add_definitions (${SEQAN_DEFINITIONS})
 
 # Update the list of file names below if you add source files to your application.
-add_executable (RNAMotif RNAMotif.cpp motif_structures.h RNAlib_utils.h)
+add_executable (RNAMotif RNAMotif.cpp motif.h motif_structures.h RNAlib_utils.h)
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/lib/x86_64-linux-gnu/libRNA.a")
