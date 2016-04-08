@@ -93,6 +93,22 @@ void WUSStoPseudoBracket(std::string& structure, char* pseudoBracketString){
 	pseudoBracketString[i] = 0;
 }
 
+void structureToInteractions(char* structure, TInteractionPairs &interactions){
+	short * struc_table = vrna_ptable(structure);
+
+	interactions.resize(struc_table[0]);
+	int j = 0;
+	for (size_t i=1; i <= (size_t)struc_table[0]; i++){
+		if (struc_table[i] == 0)
+			interactions[i-1] = -1;
+		else
+			interactions[i-1] = struc_table[i]-1;
+		j++;
+	}
+
+	free(struc_table);
+}
+
 void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPairs, std::string& seq_str, const char * constraint = NULL){
 	size_t seq_size = seq_str.length();
 
@@ -119,7 +135,7 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	double mfe 	 = (double)vrna_mfe(vc, structure);
 	double gibbs = (double)vrna_pf(vc, weird_structure);
 	//printf("%s %zu\n%s\n%s (%6.2f)\n", seq, seq_size, structure, weird_structure, gibbs);
-	printf("%s %zu\n%s (%6.2f)\n", seq, seq_size, weird_structure, gibbs);
+	//printf("%s %zu\n%s (%6.2f)\n", seq, seq_size, weird_structure, gibbs);
 
 	// extract base pair probabilities from fold compound
 	vrna_plist_t *pl1, *ptr;
@@ -136,38 +152,38 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	}
 
 	// save sequence structure
-	short * struc_table = vrna_ptable(structure);
-	for (size_t i=0; i < seq_size; i++){
-		interPairs[i] = struc_table[i];
-	}
+	structureToInteractions(structure, interPairs);
 
 	free(structure);
 	free(weird_structure);
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(const char** seqs, char* structure, const char* constraint = NULL){
+void getConsensusStructure(const char** seqs, TInteractionPairs &consensus, const char* constraint = NULL){
+	char *structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
 	vrna_fold_compound_t *vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 	// add constraints if available
 	if (constraint){
 		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
-		std::cout << "Rfam converted:\n" << constraint << std::endl;
+		std::cout << "bracket:" << constraint << std::endl;
 	}
 
 	vrna_mfe(vc, structure);
 	vrna_fold_compound_free(vc);
 
-	std::cout << "Vienna consensus:\n" << structure << std::endl;
+	std::cout << "Vienna: " << structure << std::endl;
 
-	vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
-	if (constraint)
-		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
+	//	vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+	// if (constraint)
+	//		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
 
-	vrna_pf(vc, structure);
-	std::cout << "Weird consensus:\n" << structure << std::endl;
+	// vrna_pf(vc, structure);
 
-	vrna_fold_compound_free(vc);
+	structureToInteractions(structure, consensus);
+
+	free(structure);
+	//vrna_fold_compound_free(vc);
 }
 
 #endif  // #ifndef APPS_RNAMOTIF_RNALIB_UTILS_H_

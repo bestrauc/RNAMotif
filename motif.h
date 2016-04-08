@@ -53,4 +53,49 @@
 // Functions
 // ============================================================================
 
+// take a structure table and determine:
+// Stem Loop -> Stem, Hairpin
+void structurePartition(Motif &motif){
+	TInteractionPairs & consensus = motif.consensusStructure;
+	std::pair<int, int > lastHairpin;
+	int closing = 0;
+	int open = 0;
+
+	// look for stem loops: closing followed by opening structure
+	for (size_t i = 0; i < motif.consensusStructure.size(); ++i){
+		int bracket = consensus[i];
+		if (bracket == -1)
+			continue;
+
+		// a stem was closed
+		if (bracket  < i){
+			// closing bracket points to opening bracket after prev. hairpin
+			if (bracket == open){
+				lastHairpin = std::make_pair(bracket, i);
+				motif.hairpinLoops.push_back(lastHairpin);
+			}
+
+			closing = i;
+		}
+
+		// opened
+		if (bracket > i){
+			// if the opening bracket was preceeded by a closing one
+			if (closing != 0){
+				lastHairpin = std::make_pair(consensus[closing], closing);
+				motif.hairpinLoops.push_back(lastHairpin);
+				closing = 0;
+				open = i;
+			}
+		}
+	}
+
+	if (open == 0 && closing !=0){
+		//std::cout << "Stemloop in " << consensus[last_closing] << "," << last_closing << "\n";
+		motif.hairpinLoops.push_back(std::make_pair(consensus[closing], closing));
+	}
+
+	return;
+}
+
 #endif  // #ifndef APPS_RNAMOTIF_MOTIF_H_

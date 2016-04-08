@@ -275,7 +275,7 @@ int main(int argc, char const ** argv)
 
    	int i = 0;
 
-   	Motif<TAlign> rna_motif;
+   	Motif rna_motif;
    	rna_motif.seedAlignment = record.alignment;
    	rna_motif.interactionGraphs.resize(record.seqences.size());
    	rna_motif.interactionPairs.resize(record.seqences.size());
@@ -298,11 +298,21 @@ int main(int argc, char const ** argv)
 	}
 
 	// create structure for the whole multiple alignment
-	char *structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
-	std::cout << "Rfam consensus:\n" << record.seqence_information["SS_cons"] << std::endl;
-	getConsensusStructure((const char**)seqs, structure, bracket);
+	std::cout << "Rfam:   " << record.seqence_information["SS_cons"] << std::endl;
+	getConsensusStructure((const char**)seqs, rna_motif.consensusStructure, bracket);
 
-	free(structure);
+	structurePartition(rna_motif);
+
+	int pos = -8;
+	for (auto pair : rna_motif.hairpinLoops){
+		std::cout << std::string(pair.first-pos, ' ');
+		std::cout << std::string(pair.second-pair.first+1, '+');
+
+		pos += (pair.first-pos) + (pair.second-pair.first+1);
+	}
+
+	std::cout << std::endl;
+
 	free(bracket);
 
     return 0;

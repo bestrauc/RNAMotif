@@ -93,18 +93,18 @@ struct InteractionGraph {
 	TUgraph graph; // this graph represents all the computed interaction edges
 };
 
-template <typename TAlign>
 struct Motif{
 	// stores interaction information for the N sequences in a N-vector
 	// TODO: graph
 	std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
 	std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
+	TInteractionPairs consensusStructure;
 
 	// the alignment structure of the seed RNA family
 	TAlign seedAlignment;
 
 	// the regions identified as hairpins. Nested hairpin structures are stored as successive pairs.
-	std::vector<THairLoops> hairpinLoops;
+	THairLoops hairpinLoops;
 
 };
 
