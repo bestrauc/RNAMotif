@@ -36,6 +36,7 @@
 #define APPS_RNAMOTIF_MOTIF_H_
 
 #include "motif_structures.h"
+#include <stack>
 
 // ============================================================================
 // Forwards
@@ -61,39 +62,39 @@ void structurePartition(Motif &motif){
 	int closing = 0;
 	int open = 0;
 
-	// look for stem loops: closing followed by opening structure
+	std::stack<int> pairStack;
+
 	for (size_t i = 0; i < motif.consensusStructure.size(); ++i){
 		int bracket = consensus[i];
 		if (bracket == -1)
 			continue;
 
-		// a stem was closed
-		if (bracket  < i){
-			// closing bracket points to opening bracket after prev. hairpin
-			if (bracket == open){
-				lastHairpin = std::make_pair(bracket, i);
-				motif.hairpinLoops.push_back(lastHairpin);
-			}
-
-			closing = i;
-		}
-
-		// opened
+		// opening bracket, save previous stem-loop if there was one
 		if (bracket > i){
-			// if the opening bracket was preceeded by a closing one
-			if (closing != 0){
-				lastHairpin = std::make_pair(consensus[closing], closing);
+			// if we found a open/close match before, save that and reset
+			if (lastHairpin.second > 0){
 				motif.hairpinLoops.push_back(lastHairpin);
-				closing = 0;
-				open = i;
+
+				// clear stack and reset last hairpin found
+				std::stack<int>().swap(pairStack);
+				lastHairpin = std::pair<int, int>();
+			}
+
+			pairStack.push(i);
+		}
+		// closing bracket
+		else {
+			if (!pairStack.empty() && bracket == pairStack.top()){
+				lastHairpin.first = bracket;
+				lastHairpin.second = i;
+				pairStack.pop();
 			}
 		}
 	}
 
-	if (open == 0 && closing !=0){
-		//std::cout << "Stemloop in " << consensus[last_closing] << "," << last_closing << "\n";
-		motif.hairpinLoops.push_back(std::make_pair(consensus[closing], closing));
-	}
+	// save last stem-loop if there is one
+	if (lastHairpin.second > 0)
+		motif.hairpinLoops.push_back(lastHairpin);
 
 	return;
 }

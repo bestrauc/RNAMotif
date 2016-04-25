@@ -305,6 +305,7 @@ int main(int argc, char const ** argv)
 
 	int pos = -8;
 	for (auto pair : rna_motif.hairpinLoops){
+//		std::cout << pair.first << " " << pair.second << "\n";
 		std::cout << std::string(pair.first-pos, ' ');
 		std::cout << std::string(pair.second-pair.first+1, '+');
 
