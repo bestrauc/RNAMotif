@@ -54,47 +54,55 @@
 // Functions
 // ============================================================================
 
-// take a structure table and determine:
-// Stem Loop -> Stem, Hairpin
+// Example: (((((((.......((((((((..(((((..(((((.....((((((....((((...))))))))))...((((....((.....))....))))))))).)))))....))).))))))))))))........((((((.....)))))).................
+// take a structure table and determine the structural elements (stem, bulge, internal loop, hairpin)
 void structurePartition(Motif &motif){
 	TInteractionPairs & consensus = motif.consensusStructure;
-	std::pair<int, int > lastHairpin;
-	int closing = 0;
-	int open = 0;
+		std::pair<int, int > lastHairpin;
+		std::stack<int> pairStack;
 
-	std::stack<int> pairStack;
+		for (size_t i = 0; i < motif.consensusStructure.size(); ++i){
+			int bracket = consensus[i];
 
-	for (size_t i = 0; i < motif.consensusStructure.size(); ++i){
-		int bracket = consensus[i];
-		if (bracket == -1)
-			continue;
+			// skip unmatched regions
+			if (bracket == -1)
+				continue;
 
-		// opening bracket, save previous stem-loop if there was one
-		if (bracket > i){
-			// if we found a open/close match before, save that and reset
-			if (lastHairpin.second > 0){
-				motif.hairpinLoops.push_back(lastHairpin);
+			// opening bracket, save previous stem-loop if there was one
+			if (bracket > i){
+				// if we found a open/close match before, save that and reset
+				if (lastHairpin.second > 0){
+					motif.hairpinLoops.push_back(lastHairpin);
 
-				// clear stack and reset last hairpin found
-				std::stack<int>().swap(pairStack);
-				lastHairpin = std::pair<int, int>();
+					// clear stack and reset last hairpin found
+					std::stack<int>().swap(pairStack);
+					lastHairpin = std::pair<int, int>();
+				}
+
+				// save the opening bracket on the stack
+				pairStack.push(i);
 			}
-
-			pairStack.push(i);
+			// closing bracket
+			else {
+				if (!pairStack.empty() && bracket == pairStack.top()){
+					lastHairpin.first = bracket;
+					lastHairpin.second = i;
+					pairStack.pop();
+				}
+			}
 		}
-		// closing bracket
-		else {
-			if (!pairStack.empty() && bracket == pairStack.top()){
-				lastHairpin.first = bracket;
-				lastHairpin.second = i;
-				pairStack.pop();
-			}
+
+		// save last stem-loop if there is one
+		if (lastHairpin.second > 0)
+			motif.hairpinLoops.push_back(lastHairpin);
+
+	// after locating stem loops, separate structural elements
+	for (auto pair : motif.hairpinLoops){
+		for (size_t i = pair.first; i < pair.second; ++i){
+
 		}
 	}
 
-	// save last stem-loop if there is one
-	if (lastHairpin.second > 0)
-		motif.hairpinLoops.push_back(lastHairpin);
 
 	return;
 }

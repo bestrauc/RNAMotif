@@ -65,7 +65,7 @@ struct vectGraphElement {
 };
 
 typedef std::vector<int> TInteractionPairs;
-typedef std::vector<std::pair<int, int > > THairLoops;
+typedef std::vector<std::pair<int, int > > TStructureRegions;
 
 // Alphabets usually found in Stockholm format files are Rna or AminoAcid
 template <typename TAlphabet>
@@ -93,6 +93,12 @@ struct InteractionGraph {
 	TUgraph graph; // this graph represents all the computed interaction edges
 };
 
+// Describes a type of secondary structure and its statistics (varying length, base probabilities, etc.)
+// Can be: Stem, Bulge, Internal Loop, Hairpin Loop
+struct StructureElement{
+
+};
+
 struct Motif{
 	// stores interaction information for the N sequences in a N-vector
 	// TODO: graph
@@ -104,7 +110,7 @@ struct Motif{
 	TAlign seedAlignment;
 
 	// the regions identified as hairpins. Nested hairpin structures are stored as successive pairs.
-	THairLoops hairpinLoops;
+	TStructureRegions hairpinLoops;
 
 };
 

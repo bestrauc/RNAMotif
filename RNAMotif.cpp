@@ -312,6 +312,8 @@ int main(int argc, char const ** argv)
 		pos += (pair.first-pos) + (pair.second-pair.first+1);
 	}
 
+	// separate the consensus structure into its components (stem, hairpin, etc.)
+
 	std::cout << std::endl;
 
 	free(bracket);
