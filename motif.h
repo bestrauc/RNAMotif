@@ -57,6 +57,8 @@
 // Example: (((((((.......((((((((..(((((..(((((.....((((((....((((...))))))))))...((((....((.....))....))))))))).)))))....))).))))))))))))........((((((.....)))))).................
 // take a structure table and determine the structural elements (stem, bulge, internal loop, hairpin)
 void structurePartition(Motif &motif){
+	TStemLoopRegions stemLoops;
+
 	TInteractionPairs & consensus = motif.consensusStructure;
 		std::pair<int, int > lastHairpin;
 		std::stack<int> pairStack;
@@ -72,7 +74,7 @@ void structurePartition(Motif &motif){
 			if (bracket > i){
 				// if we found a open/close match before, save that and reset
 				if (lastHairpin.second > 0){
-					motif.hairpinLoops.push_back(lastHairpin);
+					stemLoops.push_back(lastHairpin);
 
 					// clear stack and reset last hairpin found
 					std::stack<int>().swap(pairStack);
@@ -94,15 +96,14 @@ void structurePartition(Motif &motif){
 
 		// save last stem-loop if there is one
 		if (lastHairpin.second > 0)
-			motif.hairpinLoops.push_back(lastHairpin);
+			stemLoops.push_back(lastHairpin);
 
 	// after locating stem loops, separate structural elements
-	for (auto pair : motif.hairpinLoops){
+	for (auto pair : stemLoops){
 		for (size_t i = pair.first; i < pair.second; ++i){
 
 		}
 	}
-
 
 	return;
 }
