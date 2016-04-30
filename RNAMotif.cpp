@@ -303,14 +303,14 @@ int main(int argc, char const ** argv)
 
 	structurePartition(rna_motif);
 
-	int pos = -8;
-	for (auto pair : rna_motif.hairpinLoops){
+//	int pos = -8;
+//	for (auto pair : rna_motif.hairpinLoops){
 //		std::cout << pair.first << " " << pair.second << "\n";
-		std::cout << std::string(pair.first-pos, ' ');
-		std::cout << std::string(pair.second-pair.first+1, '+');
-
-		pos += (pair.first-pos) + (pair.second-pair.first+1);
-	}
+//		std::cout << std::string(pair.first-pos, ' ');
+//		std::cout << std::string(pair.second-pair.first+1, '+');
+//
+//		pos += (pair.first-pos) + (pair.second-pair.first+1);
+//	}
 
 	// separate the consensus structure into its components (stem, hairpin, etc.)
 

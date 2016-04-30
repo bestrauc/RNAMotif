@@ -65,7 +65,6 @@ struct vectGraphElement {
 };
 
 typedef std::vector<int> TInteractionPairs;
-typedef std::vector<std::pair<int, int > > TStemLoopRegions;
 
 // Alphabets usually found in Stockholm format files are Rna or AminoAcid
 template <typename TAlphabet>
@@ -99,15 +98,16 @@ struct StructureElement{
 	enum type {HAIRPIN, STEM, LOOP};
 
 	// for HAIRPIN: just one string
-	// for STEM   : two strings (left and right)
-	// for LOOP   : two strings (left and right)
-
-	std::vector<> StructureComponents;
+	// for STEM   : two strings (left and right side of the stem)
+	// for LOOP   : two strings (left and right side of the loop)
+	//			    if one side is empty, loop is a bulge
+	std::vector<seqan::String<seqan::ProfileChar<seqan::Rna> > > StructureComponents;
 };
 
-struct
-
+// a structure
 typedef std::vector<StructureElement> TStructure;
+typedef std::vector<TStructure> TStemLoopProfile;
+typedef std::vector<std::pair<int, int > > TStemLoopRegions;
 
 struct Motif{
 	// stores interaction information for the N sequences in a N-vector
@@ -119,8 +119,8 @@ struct Motif{
 	// the alignment structure of the seed RNA family
 	TAlign seedAlignment;
 
-	// the regions identified as hairpins. Nested hairpin structures are stored as successive pairs.
-	TStemLoopRegions hairpinLoops;
+	//
+	TStemLoopProfile hairpinLoops;
 
 };
 
