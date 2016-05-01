@@ -64,7 +64,6 @@ struct vectGraphElement {
 	TUgraph interGraph; // this graph represents all the computed interaction edges
 };
 
-typedef std::vector<int> TInteractionPairs;
 
 // Alphabets usually found in Stockholm format files are Rna or AminoAcid
 template <typename TAlphabet>
@@ -92,16 +91,20 @@ struct InteractionGraph {
 	TUgraph graph; // this graph represents all the computed interaction edges
 };
 
+typedef std::vector<int> TInteractionPairs;
+typedef seqan::String<seqan::ProfileChar<seqan::Rna> > RNAProfileString;
+typedef enum {HAIRPIN, STEM, LOOP} StructureType;
+
 // Describes a type of secondary structure
 // Stem, Internal Loop, Hairpin Loop
 struct StructureElement{
-	enum type {HAIRPIN, STEM, LOOP};
+	StructureType type;
 
 	// for HAIRPIN: just one string
 	// for STEM   : two strings (left and right side of the stem)
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
-	std::vector<seqan::String<seqan::ProfileChar<seqan::Rna> > > StructureComponents;
+	std::vector<RNAProfileString> StructureComponents;
 };
 
 // a structure
@@ -120,7 +123,7 @@ struct Motif{
 	TAlign seedAlignment;
 
 	//
-	TStemLoopProfile hairpinLoops;
+	TStemLoopProfile profile;
 
 };
 
