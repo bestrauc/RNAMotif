@@ -49,6 +49,7 @@ extern "C"{
 	#include  <ViennaRNA/alifold.h>
 	#include  <ViennaRNA/constraints.h>
 	#include  <ViennaRNA/PS_dot.h>
+	#include  <ViennaRNA/aln_util.h>
 }
 
 // ============================================================================
@@ -160,7 +161,7 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(const char** seqs, TInteractionPairs &consensus, const char* constraint = NULL){
+void getConsensusStructure(const char** seqs, TInteractionPairs &consensusStructure, const char* constraint = NULL){
 	char *structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
 	char *prob_structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
 	vrna_fold_compound_t *vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
@@ -174,7 +175,7 @@ void getConsensusStructure(const char** seqs, TInteractionPairs &consensus, cons
 	vrna_mfe(vc, structure);
 	vrna_pf(vc, prob_structure);
 
-	std::cout << "Vienna: " << structure << std::endl;
+	std::cout << "Vienna: " << structure << "\n" << consens_mis(seqs) << " " << std::endl;
 
 	//	vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 	// if (constraint)
@@ -191,7 +192,7 @@ void getConsensusStructure(const char** seqs, TInteractionPairs &consensus, cons
 	//	Function used to plot the dot_plot graph
 	(void) PS_dot_plot_list((char*)seqs[0], "prova_dot_plot.ps", pl1, pl1, "");
 
-	structureToInteractions(structure, consensus);
+	structureToInteractions(structure, consensusStructure);
 
 	vrna_fold_compound_free(vc);
 	free(structure);

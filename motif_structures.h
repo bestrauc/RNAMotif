@@ -105,12 +105,13 @@ struct StructureElement{
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
 	std::vector<RNAProfileString> StructureComponents;
+	std::vector<RNAProfileString> StructureStatistics;
 };
 
 // a structure
+typedef std::vector<std::pair<int, int > > TStemLoopRegions;
 typedef std::vector<StructureElement> TStructure;
 typedef std::vector<TStructure> TStemLoopProfile;
-typedef std::vector<std::pair<int, int > > TStemLoopRegions;
 
 struct Motif{
 	// stores interaction information for the N sequences in a N-vector
