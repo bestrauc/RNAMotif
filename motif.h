@@ -54,17 +54,29 @@
 // Functions
 // ============================================================================
 
-RNAProfileString createRNAProfile(unsigned start, unsigned end, TAlign &align){
+RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align){
 	RNAProfileString profileString;
 	seqan::resize(profileString, end-start+1);
 
+	structureElement.min_length = 10000;
+	structureElement.max_length = end - start + 1;
+
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
+		unsigned rowGaps = seqan::countGaps(seqan::row(align, row), start-1) - seqan::countGaps(seqan::row(align, row), end);
+		unsigned seqLength = (end-start+1) - rowGaps;
+
+		if (seqLength < structureElement.min_length)
+			structureElement.min_length = seqLength;
+
 		for (unsigned i=0; i < seqan::length(profileString); ++i){
 			int index = i+start;
 			profileString[i].count[seqan::ordValue(seqan::row(align, row)[index])] += 1;
 		}
 	}
+
+	structureElement.StructureComponents.push_back(profileString);
+	//std::cout << structureElement.min_length << " - " << structureElement.max_length << "\n";
 
 	return profileString;
 }
@@ -140,11 +152,10 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 					while (consensus[unpaired]==-1) ++unpaired;
 					std::cout << "Left bulge in [" << right+1 << "," << unpaired-1 << "]\n";
 
-					RNAProfileString bulgeProfile = createRNAProfile(right+1, unpaired-1, motif.seedAlignment);
-
 					StructureElement bulge;
+
 					bulge.type = LOOP;
-					bulge.StructureComponents.push_back(bulgeProfile);
+					RNAProfileString bulgeProfile = addRNAProfile(bulge, right+1, unpaired-1, motif.seedAlignment);
 					stemStructure.push_back(bulge);
 				}
 
@@ -152,14 +163,14 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 				right = consensus[pos];
 			}
 
-			std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1] << "," << consensus[i] << " " << consensus[i] - consensus[pos-1]+1 << "]\n";
-			RNAProfileString leftProfile  = createRNAProfile(i, pos-1, motif.seedAlignment);
-			RNAProfileString rightProfile = createRNAProfile(consensus[pos-1], consensus[i], motif.seedAlignment);
-
 			StructureElement stem;
+
+			std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1] << "," << consensus[i] << " " << consensus[i] - consensus[pos-1]+1 << "]\n";
+
 			stem.type = STEM;
-			stem.StructureComponents.push_back(leftProfile);
-			stem.StructureComponents.push_back(rightProfile);
+			RNAProfileString leftProfile  = addRNAProfile(stem, i, pos-1, motif.seedAlignment);
+			RNAProfileString rightProfile = addRNAProfile(stem, consensus[pos-1], consensus[i], motif.seedAlignment);
+
 			stemStructure.push_back(stem);
 		}
 		// if unpaired, count the length of the loop and check for a bulge
@@ -177,29 +188,25 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 			// Left bulge
 			if (rb - lb == 1){
 				std::cout << "Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]\n";
-				RNAProfileString bulgeProfile = createRNAProfile(pos, run-1, motif.seedAlignment);
 
 				structure.type = LOOP;
-				structure.StructureComponents.push_back(bulgeProfile);
+				RNAProfileString bulgeProfile = addRNAProfile(structure, pos, run-1, motif.seedAlignment);
 			}
 			// Hairpin (stop the outer loop here since all structures found)
 			else if (rb == run){
 				std::cout << "Hairpin in [" << pos << "," << run-1 << " " << run-pos << "]\n";
 
-				RNAProfileString hairpinProfile = createRNAProfile(pos, run-1, motif.seedAlignment);
 				structure.type = HAIRPIN;
-				structure.StructureComponents.push_back(hairpinProfile);
+				RNAProfileString hairpinProfile = addRNAProfile(structure, pos, run-1, motif.seedAlignment);
 				break;
 			}
 			// Interior loop with left and right side
 			else{
 				std::cout << "Left loop: " << "[" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: " << lb+1 << "," << rb-1 << " " << rb-1-lb << "\n";
-				RNAProfileString leftProfile  = createRNAProfile(pos, run-1, motif.seedAlignment);
-				RNAProfileString rightProfile = createRNAProfile(lb+1, rb-1, motif.seedAlignment);
 
 				structure.type = LOOP;
-				structure.StructureComponents.push_back(leftProfile);
-				structure.StructureComponents.push_back(rightProfile);
+				RNAProfileString leftProfile  = addRNAProfile(structure, pos, run-1, motif.seedAlignment);
+				RNAProfileString rightProfile = addRNAProfile(structure, lb+1, rb-1, motif.seedAlignment);
 			}
 
 			stemStructure.push_back(structure);
@@ -234,6 +241,7 @@ void structurePartition(Motif &motif){
 
 	// after locating stem loops, separate structural elements
 	for (auto pair : stemLoops){
+		// find structural elements
 		partitionStemLoop(motif, pair);
 	}
 

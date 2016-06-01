@@ -105,7 +105,10 @@ struct StructureElement{
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
 	std::vector<RNAProfileString> StructureComponents;
-	std::vector<RNAProfileString> StructureStatistics;
+
+	// length of the sequence that makes up the structure
+	// the variation in length comes due to gaps in the alignment
+	unsigned min_length, max_length, mean_length;
 };
 
 // a structure
