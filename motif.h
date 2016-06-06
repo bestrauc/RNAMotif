@@ -55,28 +55,46 @@
 // ============================================================================
 
 RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align){
+	typedef seqan::Row<TAlign>::Type TRow;
+
 	RNAProfileString profileString;
 	seqan::resize(profileString, end-start+1);
+	StructureStatistics stats;
 
-	structureElement.min_length = 10000;
-	structureElement.max_length = end - start + 1;
+	// min and max length initialized with their most extreme possible values
+	stats.min_length = end - start + 1;
+	stats.max_length = 0;
 
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
-		unsigned rowGaps = seqan::countGaps(seqan::row(align, row), start-1) - seqan::countGaps(seqan::row(align, row), end);
-		unsigned seqLength = (end-start+1) - rowGaps;
+		TRow & i_row = seqan::row(align,row);
+		unsigned source_start = seqan::toSourcePosition(i_row, start);
+		unsigned source_end = seqan::toSourcePosition(i_row, end);
+		unsigned seqLength = source_end -  source_start+1;
 
-		if (seqLength < structureElement.min_length)
-			structureElement.min_length = seqLength;
+		// check if we only had gaps in the region (end-start+1 doesn't work then)
+		if (source_start == source_end && seqan::isGap(i_row, end))
+			seqLength = 0;
 
+		if (seqLength < stats.min_length){
+			stats.min_length = seqLength;
+		}
+
+		if (seqLength > stats.max_length)
+			stats.max_length = seqLength;
+
+		// create profile of bases in this column
 		for (unsigned i=0; i < seqan::length(profileString); ++i){
 			int index = i+start;
 			profileString[i].count[seqan::ordValue(seqan::row(align, row)[index])] += 1;
 		}
 	}
 
-	structureElement.StructureComponents.push_back(profileString);
-	//std::cout << structureElement.min_length << " - " << structureElement.max_length << "\n";
+	if (structureElement.type == StructureType::HAIRPIN && stats.min_length < 3)
+		stats.min_length = 3;
+
+	structureElement.components.push_back(profileString);
+	structureElement.statistics.push_back(stats);
 
 	return profileString;
 }

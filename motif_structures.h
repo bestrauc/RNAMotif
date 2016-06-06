@@ -95,6 +95,12 @@ typedef std::vector<int> TInteractionPairs;
 typedef seqan::String<seqan::ProfileChar<seqan::Rna> > RNAProfileString;
 typedef enum {HAIRPIN, STEM, LOOP} StructureType;
 
+struct StructureStatistics{
+	unsigned min_length;
+	unsigned max_length;
+	unsigned mean_length;
+};
+
 // Describes a type of secondary structure
 // Stem, Internal Loop, Hairpin Loop
 struct StructureElement{
@@ -104,11 +110,11 @@ struct StructureElement{
 	// for STEM   : two strings (left and right side of the stem)
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
-	std::vector<RNAProfileString> StructureComponents;
+	std::vector<RNAProfileString> components;
 
 	// length of the sequence that makes up the structure
 	// the variation in length comes due to gaps in the alignment
-	unsigned min_length, max_length, mean_length;
+	std::vector<StructureStatistics> statistics;
 };
 
 // a structure
