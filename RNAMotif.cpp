@@ -52,6 +52,7 @@
 
 // App headers
 #include "RNAlib_utils.h"
+#include "IPknot_utils.h"
 #include "motif.h"
 
 // ==========================================================================
@@ -71,6 +72,7 @@ struct AppOptions
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
     bool constrain;
+    bool pseudoknot;
 
     // The first (and only) argument of the program is stored here.
     seqan::CharString rna_file;
@@ -193,6 +195,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     // We require one argument.
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
 
+    addOption(parser, seqan::ArgParseOption("ps", "pseudoknot", "Predict structure with IPknot to include pseuoknots."));
     addOption(parser, seqan::ArgParseOption("co", "constrain", "Constrain individual structures with the seed consensus structure."));
     addOption(parser, seqan::ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
     addOption(parser, seqan::ArgParseOption("v", "verbose", "Enable verbose output."));
@@ -210,7 +213,8 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     if (res != seqan::ArgumentParser::PARSE_OK)
         return res;
 
-    options.constrain = isSet(parser, "constrain");
+    options.constrain  = isSet(parser, "constrain");
+    options.pseudoknot = isSet(parser, "pseudoknot");
 
     // Extract option values.
     if (isSet(parser, "quiet"))
@@ -253,6 +257,7 @@ int main(int argc, char const ** argv)
                   << '\n'
                   << "VERBOSITY\t" << options.verbosity << '\n'
                   << "CONSTRAINT\t" << options.constrain << '\n'
+				  << "PSEUDOKNOTS\t" << options.pseudoknot << '\n'
                   << "RNA      \t" << options.rna_file << "\n\n";
     }
 
@@ -262,15 +267,11 @@ int main(int argc, char const ** argv)
 
 	std::cout << record.alignment << "\n";
 
-   	// compute consensus structure
-   	char** seqs = new char*[record.seqences.size()+1];
-   	seqs[record.seqences.size()] = 0;
-
-	// convert Rfam WUSS structure to normal brackets
-	char *bracket = NULL;
+	// convert Rfam WUSS structure to normal brackets to get a constraint
+	char *constraint_bracket = NULL;
 	if (options.constrain){
-		bracket = new char[record.seqence_information["SS_cons"].length() + 1];
-		WUSStoPseudoBracket(record.seqence_information["SS_cons"], bracket);
+		constraint_bracket = new char[record.seqence_information["SS_cons"].length() + 1];
+		WUSStoPseudoBracket(record.seqence_information["SS_cons"], constraint_bracket);
 	}
 
    	int i = 0;
@@ -280,43 +281,25 @@ int main(int argc, char const ** argv)
    	rna_motif.interactionGraphs.resize(record.seqences.size());
    	rna_motif.interactionPairs.resize(record.seqences.size());
 
-   	//typedef seqan::StringSetType<StockholmRecord::TAlign> TStringSet;
-   	//TStringSet& alignStrings = seqan::stringSet(record.alignment);
-
 	// build interaction graphs for each sequence
 	for (auto elem : record.seqences)
 	{
-		// TODO: Get row out of the alignment object? (not always Stockholm)
-		seqs[i] = new char[elem.second.size()+1];
-		std::strcpy(seqs[i], elem.second.c_str());
-
 		createInteractions(rna_motif.interactionGraphs[i],
 						   rna_motif.interactionPairs[i],
-						   elem.second, bracket);
-
+						   elem.second, constraint_bracket);
 		i++;
 	}
 
 	// create structure for the whole multiple alignment
 	std::cout << "Rfam:   " << record.seqence_information["SS_cons"] << std::endl;
-	getConsensusStructure((const char**)seqs, rna_motif.consensusStructure, bracket);
+	//getConsensusStructure((const char**)seqs, rna_motif.consensusStructure, bracket, IPknotFold());
+	getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
 
 	structurePartition(rna_motif);
 
-//	int pos = -8;
-//	for (auto pair : rna_motif.hairpinLoops){
-//		std::cout << pair.first << " " << pair.second << "\n";
-//		std::cout << std::string(pair.first-pos, ' ');
-//		std::cout << std::string(pair.second-pair.first+1, '+');
-//
-//		pos += (pair.first-pos) + (pair.second-pair.first+1);
-//	}
-
-	// separate the consensus structure into its components (stem, hairpin, etc.)
-
 	std::cout << std::endl;
 
-	free(bracket);
+	free(constraint_bracket);
 
     return 0;
 }

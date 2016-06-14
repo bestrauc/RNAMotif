@@ -25,12 +25,18 @@ find_package (OpenMP REQUIRED)
 include_directories (${SEQAN_INCLUDE_DIRS_MAIN})
 include_directories ("/usr/include/ViennaRNA")
 include_directories (SYSTEM ${SEQAN_INCLUDE_DIRS_DEPS})
+include_directories ("ipknot")
 
 # Add definitions set by find_package (SeqAn).
 add_definitions (${SEQAN_DEFINITIONS})
 
+#set(IPKNOT_SOURCES ipknot/aln.h ipknot/aln.cpp ipknot/boltzmann_param.h ipknot/boltzmann_param.h ipknot/bpseq.h ipknot_bpseq.cpp ipknot/config.h ipknot/fa.h ipknot/fa.cpp ipknot/fold.h ipknot/fold.cpp ipknot.i
+file (GLOB IPKNOT_SOURCES ipknot/*.h ipknot/*.cpp ipknot/*.ipp ipknot/*.c)
+file (GLOB CONTRA_SOURCES ipknot/contrafold/*.hpp ipknot/contrafold/*.cpp ipknot/contrafold/*.ipp)
+file (GLOB NUPACK_SOURCES ipknot/nupack/*.h ipknot/nupack/*.cpp)
+
 # Update the list of file names below if you add source files to your application.
-add_executable (RNAMotif RNAMotif.cpp motif.h motif_structures.h RNAlib_utils.h)
+add_executable (RNAMotif RNAMotif.cpp motif.h motif_structures.h RNAlib_utils.h IPknot_utils.h ${IPKNOT_SOURCES} ${CONTRA_SOURCES} ${NUPACK_SOURCES})
 
 # Add dependencies found by find_package (SeqAn).
 target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/lib/x86_64-linux-gnu/libRNA.a")

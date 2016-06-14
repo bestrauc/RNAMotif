@@ -64,6 +64,13 @@ struct vectGraphElement {
 	TUgraph interGraph; // this graph represents all the computed interaction edges
 };
 
+// tag for the type of folding algorithm
+struct RNALibFold__;
+typedef seqan::Tag<RNALibFold__> RNALibFold;
+
+struct IPknotFold__;
+typedef seqan::Tag<IPknotFold__> IPknotFold;
+
 
 // Alphabets usually found in Stockholm format files are Rna or AminoAcid
 template <typename TAlphabet>
@@ -98,7 +105,7 @@ typedef enum {HAIRPIN, STEM, LOOP} StructureType;
 struct StructureStatistics{
 	unsigned min_length;
 	unsigned max_length;
-	unsigned mean_length;
+	double mean_length;
 };
 
 // Describes a type of secondary structure

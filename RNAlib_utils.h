@@ -161,10 +161,22 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(const char** seqs, TInteractionPairs &consensusStructure, const char* constraint = NULL){
+void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const & tag){
+   	char** seqs = new char*[record.seqences.size()+1];
+   	seqs[record.seqences.size()] = 0;
+
+   	int i = 0;
+	for (auto elem : record.seqences)
+	{
+		// TODO: Get row out of the alignment object? (not always Stockholm)
+		seqs[i] = new char[elem.second.size()+1];
+		std::strcpy(seqs[i], elem.second.c_str());
+		++i;
+	}
+
 	char *structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
 	char *prob_structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
-	vrna_fold_compound_t *vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+	vrna_fold_compound_t *vc = vrna_fold_compound_comparative((const char**)seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 	// add constraints if available
 	if (constraint){
@@ -175,13 +187,7 @@ void getConsensusStructure(const char** seqs, TInteractionPairs &consensusStruct
 	vrna_mfe(vc, structure);
 	vrna_pf(vc, prob_structure);
 
-	std::cout << "Vienna: " << structure << "\n" << consens_mis(seqs) << " " << std::endl;
-
-	//	vc = vrna_fold_compound_comparative(seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
-	// if (constraint)
-	//		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
-
-	// vrna_pf(vc, structure);
+	std::cout << "Vienna: " << structure << "\n" << consens_mis((const char**)seqs) << " " << std::endl;
 
 	vrna_plist_t *pl1, *pl2;
 	// get dot plot structures
@@ -197,7 +203,6 @@ void getConsensusStructure(const char** seqs, TInteractionPairs &consensusStruct
 	vrna_fold_compound_free(vc);
 	free(structure);
 	free(prob_structure);
-	//vrna_fold_compound_free(vc);
 }
 
 #endif  // #ifndef APPS_RNAMOTIF_RNALIB_UTILS_H_

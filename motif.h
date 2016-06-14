@@ -64,6 +64,7 @@ RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned star
 	// min and max length initialized with their most extreme possible values
 	stats.min_length = end - start + 1;
 	stats.max_length = 0;
+	stats.mean_length = 0;
 
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
@@ -75,6 +76,9 @@ RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned star
 		// check if we only had gaps in the region (end-start+1 doesn't work then)
 		if (source_start == source_end && seqan::isGap(i_row, end))
 			seqLength = 0;
+
+		// set the statistics (min, max, average lengths)
+		stats.mean_length += seqLength;
 
 		if (seqLength < stats.min_length){
 			stats.min_length = seqLength;
@@ -89,6 +93,8 @@ RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned star
 			profileString[i].count[seqan::ordValue(seqan::row(align, row)[index])] += 1;
 		}
 	}
+
+	stats.mean_length = stats.mean_length / length(rows(align));
 
 	if (structureElement.type == StructureType::HAIRPIN && stats.min_length < 3)
 		stats.min_length = 3;
