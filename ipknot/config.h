@@ -25,6 +25,8 @@
 /* Define to 1 if you have the `gmp' library (-lgmp). */
 #define HAVE_LIBGMP 1
 
+#define HAVE_STRDUP 1
+
 /* Define to 1 if you have the `ltdl' library (-lltdl). */
 /* #undef HAVE_LIBLTDL */
 
@@ -68,7 +70,7 @@
 #define HAVE_VIENNA18 /**/
 
 /* have the Vienna RNA package version 2.0 or above */
-#define HAVE_VIENNA20 /**/
+#define HAVE_VIENNA20 1 /**/
 
 /* Define to 1 if the system has the type `_Bool'. */
 /* #undef HAVE__BOOL */
