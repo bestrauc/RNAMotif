@@ -87,6 +87,8 @@ struct StockholmRecord {
 	std::unordered_map<std ::string, std::string > header;
 	// seqence names -> sequence maps
 	std::unordered_map<std::string, std::string > seqences;
+	std::vector<std::string > seqNames;
+	std::vector<std::string > seqs;
 	// per column (GC) -> annotation string
 	std::unordered_map<std::string, std::string > seqence_information;
 

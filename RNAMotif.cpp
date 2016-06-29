@@ -142,6 +142,8 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record) {
 			std::string name, sequence;
 			iss >> name >> sequence;
 			record.seqences[name] = sequence;
+			record.seqNames.push_back(name);
+			record.seqs.push_back(sequence);
 		}
 	}while (std::getline(inStream, line));
 

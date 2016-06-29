@@ -522,9 +522,10 @@ parse_csv_line(const char* l)
 void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPairs &consensusStructure, const char* constraint, IPknotFold const & tag){
 	std::list<std::string> names;
 	std::list<std::string> seqs;
-	for (auto elem : record.seqences){
-		names.push_back(elem.first);
-		seqs.push_back(elem.second);
+	//for (auto elem : record.seqences){
+	for (size_t i = 0; i < record.seqences.size(); ++i){
+		names.push_back(record.seqNames[i]);
+		seqs.push_back(record.seqs[i]);
 	}
 
 	uint pk_level=0;
