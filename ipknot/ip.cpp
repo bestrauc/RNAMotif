@@ -118,6 +118,10 @@ public:
     return glp_mip_col_val(ip_, col);
   }
 
+  double get_size(){
+	  return ia_.size();
+  }
+
 private:
   glp_prob *ip_;
   std::vector<int> ia_;
@@ -426,6 +430,13 @@ IP::
 get_value(int col) const
 {
   return impl_->get_value(col);
+}
+
+double
+IP::
+get_size()
+{
+  return impl_->get_size();
 }
 
 #else

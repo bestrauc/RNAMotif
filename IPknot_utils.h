@@ -567,7 +567,9 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
     std::vector<int> bpseq;
     std::vector<int> plevel;
 
+    IPknot::EnumParam<float> ep(th);
     std::vector<float> t(th.size());
+    ep.get(t);
 
 	Aln aln(names, seqs);
 
@@ -586,18 +588,10 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 	BPEngineAln* en= mix_en ? mix_en : en_a[0];
 	en->calculate_posterior(aln.seq(), bp, offset);
 
-	float sum = 0;
-	for (int i =0; i < bp.size(); ++i){
-		std::cout << bp[i] << "\n";
-		sum += bp[i];
-	}
-
-	std::cout << aln.consensus() << " " << aln.consensus().length() << " " << bp.size() << " " << sum << "\n";
+	std::cout << aln.consensus() << " " << aln.consensus().length() << " " << bp.size() << " " << "\n";
 	std::cout << "\n";
 	for (std::string s : aln.seq())
 		std::cout << s << "\n";
-
-	std::cout << "\n";
 
 	ipknot.solve(aln.size(), bp, offset, t, bpseq, plevel);
 
@@ -610,9 +604,6 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 	std::cout << aln.consensus() << "\n";
 
 	output_fa(std::cout, aln.name().front(), aln.consensus(), bpseq, plevel);
-
-	std::cout << "\n";
-
 
     if (mix_en) delete mix_en;
     for (uint i=0; i!=en_s.size(); ++i) delete en_s[i];

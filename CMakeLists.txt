@@ -44,7 +44,7 @@ set (IPKNOT_SOURCES ipknot/config.h ipknot/aln.h ipknot/aln.cpp ipknot/fold.h ip
 add_executable (RNAMotif RNAMotif.cpp motif.h motif_structures.h RNAlib_utils.h IPknot_utils.h ${IPKNOT_SOURCES})
 
 # Add dependencies found by find_package (SeqAn).
-target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/lib/x86_64-linux-gnu/libRNA.a" glpk)
+target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/lib/x86_64-linux-gnu/libRNA.a" glpk gmp)
 
 # Add CXX flags found by find_package (SeqAn).
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")

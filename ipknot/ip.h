@@ -38,6 +38,7 @@ public:
   void update();
   double solve();
   double get_value(int col) const;
+  double get_size();
 
 private:
   IPimpl* impl_;
