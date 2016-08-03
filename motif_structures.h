@@ -35,6 +35,10 @@
 #ifndef APPS_RNAMOTIF_MOTIF_STRUCTURES_H_
 #define APPS_RNAMOTIF_MOTIF_STRUCTURES_H_
 
+// SeqAn headers
+#include <seqan/align.h>
+#include <unordered_map>
+
 // ============================================================================
 // Forwards
 // ============================================================================
@@ -100,14 +104,13 @@ struct InteractionGraph {
 	TUgraph graph; // this graph represents all the computed interaction edges
 };
 
-typedef std::vector<int> TInteractionPairs;
 typedef seqan::String<seqan::ProfileChar<seqan::Rna> > RNAProfileString;
 typedef enum {HAIRPIN, STEM, LOOP} StructureType;
 
 struct StructureStatistics{
 	unsigned min_length;
 	unsigned max_length;
-	double mean_length;
+	double  mean_length;
 };
 
 // Describes a type of secondary structure
@@ -126,14 +129,32 @@ struct StructureElement{
 	std::vector<StructureStatistics> statistics;
 };
 
-// a structure
-typedef std::vector<std::pair<int, int > > TStemLoopRegions;
+std::unordered_map<char, char> match_table =
+	{
+	 {')', '('}, {'>', '<'},
+	 {']', '['}, {'}', '{'}
+	};
+
+typedef enum {ROUND = 0, CURLY, ANGLE, SQUARE, MAX} BracketType;
+
+std::unordered_map<char, BracketType> bracket_to_type =
+	{
+	 {'(', ROUND},  {')', ROUND},
+	 {'{', CURLY},  {'}', CURLY},
+	 {'<', ANGLE},  {'>', ANGLE},
+	 {'[', SQUARE}, {']', SQUARE}
+	};
+
+typedef std::vector<std::pair<BracketType, int> > TInteractionPairs;
+typedef std::pair<int, int> TRegion;
+
+//typedef std::vector<int> TInteractionPairs;
+typedef std::vector<std::pair<BracketType, TRegion> > TSequenceRegions;
 typedef std::vector<StructureElement> TStructure;
 typedef std::vector<TStructure> TStemLoopProfile;
 
 struct Motif{
 	// stores interaction information for the N sequences in a N-vector
-	// TODO: graph
 	std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
 	std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
 	TInteractionPairs consensusStructure;
@@ -143,7 +164,6 @@ struct Motif{
 
 	//
 	TStemLoopProfile profile;
-
 };
 
 // ============================================================================

@@ -36,10 +36,6 @@ set (CONTRA_SOURCES ipknot/contrafold/Config.hpp ipknot/contrafold/SStruct.hpp i
 set (NUPACK_SOURCES ipknot/nupack/nupack.h ipknot/nupack/nupack.cpp ipknot/nupack/def_param.h ipknot/nupack/dptable.h)
 set (IPKNOT_SOURCES ipknot/config.h ipknot/aln.h ipknot/aln.cpp ipknot/fold.h ipknot/fold.cpp ipknot/ip.h ipknot/ip.cpp ${CONTRA_SOURCES} ${NUPACK_SOURCES})
 
-#file (GLOB IPKNOT_SOURCES ipknot/*.h ipknot/*.cpp ipknot/*.ipp ipknot/*.c)
-#file (GLOB CONTRA_SOURCES ipknot/contrafold/*.hpp ipknot/contrafold/*.h ipknot/contrafold/*.cpp ipknot/contrafold/*.ipp)
-#file (GLOB NUPACK_SOURCES ipknot/nupack/*.h ipknot/nupack/*.cpp)
-
 # Update the list of file names below if you add source files to your application.
 add_executable (RNAMotif RNAMotif.cpp motif.h motif_structures.h RNAlib_utils.h IPknot_utils.h ${IPKNOT_SOURCES})
 

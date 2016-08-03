@@ -54,6 +54,54 @@
 // Functions
 // ============================================================================
 
+bool isOpen(char c){
+	return (c == '(') || (c == '[') || (c == '{') || (c == '<');
+}
+
+const std::string parentheses("{}[]()<>");
+
+// helper function to generate interaction vectors via bracket notation
+void bracketToInteractions(const char* structure, TInteractionPairs& interaction){
+	// create stacks for different types of bracket matches
+	std::unordered_map<char, std::stack<int>* > match_stacks;
+
+	// curly braces
+	std::stack<int> round_stack;
+	std::stack<int> curly_stack;
+	std::stack<int> angle_stack;
+	match_stacks['('] = &round_stack;
+	match_stacks[')'] = &round_stack;
+	match_stacks['{'] = &curly_stack;
+	match_stacks['}'] = &curly_stack;
+	match_stacks['['] = &angle_stack;
+	match_stacks[']'] = &angle_stack;
+
+	unsigned n = strlen(structure);
+	interaction = TInteractionPairs(n, std::make_pair(ROUND, -1));
+
+	for (unsigned i = 0; i < n; ++i){
+		char c = structure[i];
+
+		// if we see an opening bracket (== not in match_table), put on corresponding stack
+		if (isOpen(c))
+			match_stacks[c]->push(i);
+		// skip non-brackets
+		else if (parentheses.find(c) == std::string::npos)
+			continue;
+		// else we have a closing bracket and record a match
+		else if (!match_stacks[c]->empty()){
+			int left = match_stacks[c]->top();
+			BracketType btype = bracket_to_type[c];
+			interaction[left] = std::make_pair(btype, i);
+			interaction[i]    = std::make_pair(btype, left);
+			match_stacks[c]->pop();
+		}
+		// we had a closing bracket, but no corresponding opening bracket (error)
+		else
+			std::cerr << "Missing opening bracket for " << c << " at position " << i << "\n";
+	}
+}
+
 RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align){
 	typedef seqan::Row<TAlign>::Type TRow;
 
@@ -105,16 +153,21 @@ RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned star
 	return profileString;
 }
 
-TStemLoopRegions findStemLoops(Motif &motif){
-	TStemLoopRegions stemLoops;
-	TInteractionPairs &consensus = motif.consensusStructure;
+TSequenceRegions findStemLoops(TInteractionPairs &consensus){
+	TSequenceRegions stemLoops;
 
-	std::pair<int, int > lastHairpin;
-	std::stack<int> pairStack;
+	std::vector<std::stack<int> > pairStacks;
+	std::vector<std::pair<int, int> > lastHairpins;
+	for (size_t i = 0; i < MAX; ++i){
+		pairStacks.push_back(std::stack<int>());
+		lastHairpins.push_back(std::make_pair(0,0));
+	}
 
 	// locate the stem loops
 	for (size_t i = 0; i < consensus.size(); ++i){
-		int bracket = consensus[i];
+		std::pair<BracketType, int> b = consensus[i];
+		BracketType btype = b.first;
+		int bracket = b.second;
 
 		// skip unmatched regions
 		if (bracket == -1)
@@ -123,30 +176,31 @@ TStemLoopRegions findStemLoops(Motif &motif){
 		// opening bracket, save previous stem-loop if there was one
 		if (bracket > i){
 			// if we found a open/close match before, save that and reset
-			if (lastHairpin.second > 0){
-				stemLoops.push_back(lastHairpin);
+			if (lastHairpins[btype].second > 0){
+				stemLoops.push_back(std::make_pair(btype, lastHairpins[btype]));
 
 				// clear stack and reset last hairpin found
-				std::stack<int>().swap(pairStack);
-				lastHairpin = std::pair<int, int>();
+				std::stack<int>().swap(pairStacks[btype]);
+				lastHairpins[btype] = std::pair<int, int>();
 			}
 
 			// save the opening bracket on the stack
-			pairStack.push(i);
+			pairStacks[btype].push(i);
 		}
 		// closing bracket
 		else {
-			if (!pairStack.empty() && bracket == pairStack.top()){
-				lastHairpin.first = bracket;
-				lastHairpin.second = i;
-				pairStack.pop();
+			if (!pairStacks[btype].empty() && bracket == pairStacks[btype].top()){
+				lastHairpins[btype].first = bracket;
+				lastHairpins[btype].second = i;
+				pairStacks[btype].pop();
 			}
 		}
 	}
 
 	// save last stem-loop if there is one
-	if (lastHairpin.second > 0)
-		stemLoops.push_back(lastHairpin);
+	for (unsigned i=0; i< lastHairpins.size(); ++i)
+		if (lastHairpins[i].second > 0)
+			stemLoops.push_back(std::make_pair((BracketType)i, lastHairpins[i]));
 
 	return stemLoops;
 }
@@ -162,18 +216,18 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 	size_t i = stemLoopRegion.first;
 	do {
 		int pos = i;
-		int right = consensus[pos];
+		int right = consensus[pos].second;
 
 		// count the row of opening brackets
 		if (right > pos){					// an opening bracket
 			while (right > pos){			// while it's a series of opening brackets
 				// check if the corresponding closing bracket follows
 				// or if there is a bulge on the right side
-				if ((consensus[pos+1] > pos+1) && consensus[right-1] == -1){
-					std::cout << pos << " " << consensus[pos+1] << "\n";
+				if ((consensus[pos+1].second > pos+1) && consensus[right-1].second == -1){
+					std::cout << pos << " " << consensus[pos+1].second << "\n";
 					// there is one run of unpaired bases from right+1
 					int unpaired = right+1;
-					while (consensus[unpaired]==-1) ++unpaired;
+					while (consensus[unpaired].second ==-1) ++unpaired;
 					std::cout << "Left bulge in [" << right+1 << "," << unpaired-1 << "]\n";
 
 					StructureElement bulge;
@@ -184,16 +238,16 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 				}
 
 				++pos;
-				right = consensus[pos];
+				right = consensus[pos].second;
 			}
 
 			StructureElement stem;
 
-			std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1] << "," << consensus[i] << " " << consensus[i] - consensus[pos-1]+1 << "]\n";
+			std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]\n";
 
 			stem.type = STEM;
 			RNAProfileString leftProfile  = addRNAProfile(stem, i, pos-1, motif.seedAlignment);
-			RNAProfileString rightProfile = addRNAProfile(stem, consensus[pos-1], consensus[i], motif.seedAlignment);
+			RNAProfileString rightProfile = addRNAProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
 
 			stemStructure.push_back(stem);
 		}
@@ -203,11 +257,11 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 
 			// get right border bracket of other half of loop (->(...(..)...)<=)
 			int run = pos;
-			int rb = consensus[pos-1];
-			while (consensus[run] == -1) ++run;
+			int rb = consensus[pos-1].second;
+			while (consensus[run].second == -1) ++run;
 
 			// get partner of end bracket ((...->(..)<=...))
-			int lb = consensus[run];
+			int lb = consensus[run].second;
 
 			// Left bulge
 			if (rb - lb == 1){
@@ -236,7 +290,7 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 			stemStructure.push_back(structure);
 
 			pos = run;
-			right = consensus[pos];
+			right = consensus[pos].second;
 		}
 		else
 			pos = pos + 1;
@@ -251,22 +305,25 @@ void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
 // Example: (((((((.......((((((((..(((((..(((((.....((((((....((((...))))))))))...((((....((.....))....))))))))).)))))....))).))))))))))))........((((((.....)))))).................
 // take a structure table and determine the structural elements (stem, bulge, internal loop, hairpin)
 void structurePartition(Motif &motif){
-	TStemLoopRegions stemLoops = findStemLoops(motif);
+	TSequenceRegions stemLoops = findStemLoops(motif.consensusStructure);
 
 	int pos = -8;
 	for (auto pair : stemLoops){
+		TRegion region = pair.second;
 		// visualize stem loops for debugging
-		std::cout << std::string(pair.first-pos, ' ');
-		std::cout << std::string(pair.second-pair.first+1, '+');
-		pos += (pair.first-pos) + (pair.second-pair.first+1);
+		std::cout << std::string(region.first-pos, ' ');
+		std::cout << std::string(region.second-region.first+1, '+');
+		pos += (region.first-pos) + (region.second-region.first+1);
 	}
 
 	std::cout << "\n";
 
 	// after locating stem loops, separate structural elements
 	for (auto pair : stemLoops){
+		TRegion region = pair.second;
+
 		// find structural elements
-		partitionStemLoop(motif, pair);
+		partitionStemLoop(motif, region);
 	}
 
 	return;
