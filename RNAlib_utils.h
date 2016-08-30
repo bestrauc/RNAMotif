@@ -102,9 +102,9 @@ void structureToInteractions(char* structure, TInteractionPairs &interactions){
 	int j = 0;
 	for (size_t i=1; i <= (size_t)struc_table[0]; i++){
 		if (struc_table[i] == 0)
-			interactions[i-1] = -1;
+			interactions[i-1] = std::make_pair(MAX,-1);
 		else
-			interactions[i-1] = struc_table[i]-1;
+			interactions[i-1] = std::make_pair(ROUND, struc_table[i]-1);
 		j++;
 	}
 

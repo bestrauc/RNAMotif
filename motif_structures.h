@@ -135,14 +135,14 @@ std::unordered_map<char, char> match_table =
 	 {']', '['}, {'}', '{'}
 	};
 
-typedef enum {ROUND = 0, CURLY, ANGLE, SQUARE, MAX} BracketType;
+typedef enum {ROUND = 0, SQUARE, CURLY, ANGLE, MAX} BracketType;
 
 std::unordered_map<char, BracketType> bracket_to_type =
 	{
 	 {'(', ROUND},  {')', ROUND},
+	 {'[', SQUARE}, {']', SQUARE},
 	 {'{', CURLY},  {'}', CURLY},
-	 {'<', ANGLE},  {'>', ANGLE},
-	 {'[', SQUARE}, {']', SQUARE}
+	 {'<', ANGLE},  {'>', ANGLE}
 	};
 
 typedef std::vector<std::pair<BracketType, int> > TInteractionPairs;
@@ -157,6 +157,8 @@ struct Motif{
 	// stores interaction information for the N sequences in a N-vector
 	std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
 	std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
+
+	//
 	TInteractionPairs consensusStructure;
 
 	// the alignment structure of the seed RNA family

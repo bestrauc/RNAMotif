@@ -310,10 +310,12 @@ void structurePartition(Motif &motif){
 	int pos = -8;
 	for (auto pair : stemLoops){
 		TRegion region = pair.second;
+		std::cout << pair.first << " " << region.first << " " << region.second << "\n";
+
 		// visualize stem loops for debugging
-		std::cout << std::string(region.first-pos, ' ');
-		std::cout << std::string(region.second-region.first+1, '+');
-		pos += (region.first-pos) + (region.second-region.first+1);
+		//std::cout << std::string(region.first-pos, ' ');
+		//std::cout << std::string(region.second-region.first+1, '+');
+		//pos += (region.first-pos) + (region.second-region.first+1);
 	}
 
 	std::cout << "\n";
@@ -323,7 +325,7 @@ void structurePartition(Motif &motif){
 		TRegion region = pair.second;
 
 		// find structural elements
-		partitionStemLoop(motif, region);
+		//partitionStemLoop(motif, region);
 	}
 
 	return;

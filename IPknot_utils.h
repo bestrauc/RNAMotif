@@ -42,7 +42,6 @@
 
 // Import IPknot libraries
 #include "ipknot/ip.h"
-//#include "ipknot/fa.h"
 #include "ipknot/aln.h"
 #include "ipknot/fold.h"
 
@@ -53,6 +52,8 @@
 // ============================================================================
 // Tags, Classes, Enums
 // ============================================================================
+
+/* IPknot functions */
 
 typedef unsigned int uint;
 typedef std::vector<float> VF;
@@ -396,7 +397,7 @@ private:
 };
 
 std::string
-make_parenthsis(const std::vector<int>& bpseq, const std::vector<int>& plevel)
+make_parenthesis(const std::vector<int>& bpseq, const std::vector<int>& plevel)
 {
   const int n_support_parens=4;
   const char* left_paren="([{<";
@@ -421,6 +422,31 @@ make_parenthsis(const std::vector<int>& bpseq, const std::vector<int>& plevel)
     }
   }
   return r;
+}
+
+void
+make_interaction_pairs(const std::vector<int>& bpseq, const std::vector<int>& plevel, TInteractionPairs & interactions)
+{
+  const int n_support_parens = BracketType::MAX;
+  interactions.resize(bpseq.size());
+
+  const char* left_paren="([{<";
+  const char* right_paren=")]}>";
+
+  std::string r(bpseq.size(), '.');
+  for (int i=0; i!=(int)bpseq.size(); ++i)
+  {
+    if (bpseq[i]>=0 && i<bpseq[i])
+    {
+    	int j=bpseq[i];
+    	BracketType b_type = static_cast<BracketType>(plevel[i]);
+    	interactions[i] = std::make_pair(b_type, j);
+    	interactions[j] = std::make_pair(b_type, i);
+    }
+    else if (bpseq[i] == -1) {
+    	interactions[i] = std::make_pair(MAX, -1);
+    }
+  }
 }
 
 template < class SEQ, class EN >
@@ -475,48 +501,10 @@ output_fa(std::ostream& os,
 {
   os << ">" << desc << std::endl
      << seq << std::endl
-     << make_parenthsis(bpseq, plevel) << std::endl;
+     << make_parenthesis(bpseq, plevel) << std::endl;
 }
 
-static
-void
-output_mfa(std::ostream& os, const Aln& aln,
-           const std::vector<int>& bpseq, const std::vector<int>& plevel)
-{
-  os << ">SS_cons" << std::endl
-     << make_parenthsis(bpseq, plevel) << std::endl;
-  std::list<std::string>::const_iterator name=aln.name().begin();
-  std::list<std::string>::const_iterator seq=aln.seq().begin();
-  while (name!=aln.name().end() && seq!=aln.seq().end())
-  {
-    os << ">" << *name << std::endl
-       << *seq << std::endl;
-    ++seq; ++name;
-  }
-}
-
-static
-void
-output_bpseq(std::ostream& os,
-             const std::string& desc, const std::string& seq,
-             const std::vector<int>& bpseq, const std::vector<int>& plevel)
-{
-  os << "# " << desc << std::endl;
-  for (uint i=0; i!=bpseq.size(); ++i)
-    os << i+1 << " " << seq[i] << " " << bpseq[i]+1 << std::endl;
-}
-
-template <class T>
-std::vector<T>
-parse_csv_line(const char* l)
-{
-  std::string s;
-  std::vector<T> r;
-  std::istringstream ss(l);
-  while (std::getline(ss, s, ','))
-    r.push_back(atof(s.c_str()));
-  return r;
-}
+/* End of IPknot functions */
 
 // reads the multiple alignment sequences into the IPknot Aln object
 void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPairs &consensusStructure, const char* constraint, IPknotFold const & tag){
@@ -560,11 +548,9 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 	}
 	pk_level=alpha.size();
 
-	std::cout << pk_level << " " << alpha[0] << " " << alpha[1] << " " << levelwise << " " << isolated_bp << " " << n_th << "\n";
     IPknot ipknot(pk_level, &alpha[0], levelwise, !isolated_bp, n_th);
     std::vector<float> bp;
     std::vector<int> offset;
-    std::vector<int> bpseq;
     std::vector<int> plevel;
 
     IPknot::EnumParam<float> ep(th);
@@ -588,10 +574,7 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 	BPEngineAln* en= mix_en ? mix_en : en_a[0];
 	en->calculate_posterior(aln.seq(), bp, offset);
 
-	std::cout << aln.consensus() << " " << aln.consensus().length() << " " << bp.size() << " " << "\n";
-	std::cout << "\n";
-	for (std::string s : aln.seq())
-		std::cout << s << "\n";
+	std::vector<int> bpseq;
 
 	ipknot.solve(aln.size(), bp, offset, t, bpseq, plevel);
 
@@ -601,9 +584,11 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 		ipknot.solve(aln.size(), bp, offset, t, bpseq, plevel);
 	}
 
-	std::cout << aln.consensus() << "\n";
+	make_interaction_pairs(bpseq, plevel, consensusStructure);
 
-	output_fa(std::cout, aln.name().front(), aln.consensus(), bpseq, plevel);
+	std::cout << "IPknot: " << make_parenthesis(bpseq, plevel) << "\n";
+
+	//output_fa(std::cout, aln.name().front(), aln.consensus(), consensusStructure, plevel);
 
     if (mix_en) delete mix_en;
     for (uint i=0; i!=en_s.size(); ++i) delete en_s[i];
