@@ -69,12 +69,15 @@ void bracketToInteractions(const char* structure, TInteractionPairs& interaction
 	std::stack<int> round_stack;
 	std::stack<int> curly_stack;
 	std::stack<int> angle_stack;
+	std::stack<int> edge_stack;
 	match_stacks['('] = &round_stack;
 	match_stacks[')'] = &round_stack;
 	match_stacks['{'] = &curly_stack;
 	match_stacks['}'] = &curly_stack;
 	match_stacks['['] = &angle_stack;
 	match_stacks[']'] = &angle_stack;
+	match_stacks['<'] = &edge_stack;
+	match_stacks['>'] = &edge_stack;
 
 	unsigned n = strlen(structure);
 	interaction = TInteractionPairs(n, std::make_pair(ROUND, -1));
