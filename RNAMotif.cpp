@@ -295,7 +295,6 @@ int main(int argc, char const ** argv)
 	// create structure for the whole multiple alignment
 	std::cout << "Rfam:   " << record.seqence_information["SS_cons"] << std::endl;
 	if (options.pseudoknot)
-		//((void)0);
 		getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
 	else
 		getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, RNALibFold());

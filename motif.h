@@ -212,8 +212,16 @@ TSequenceRegions findStemLoops(TInteractionPairs &consensus){
 // * any unpaired bases in between are interior loops
 // 		* if no corresponding unpaired bases: bulge
 // * innermost unpaired bases are the hairpin
-void partitionStemLoop(Motif &motif, std::pair<int, int > stemLoopRegion){
-	TInteractionPairs &consensus = motif.consensusStructure;
+void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > stemLoopRegion){
+	//TInteractionPairs &consensus = motif.consensusStructure;
+	TInteractionPairs consensus(motif.consensusStructure);
+
+	// consider only the brackets of type btype (TODO: ignore more elegantly without replacing anything?)
+	for (size_t i=0; i < consensus.size(); ++i){
+		if (consensus[i].first != btype)
+			consensus[i] = std::make_pair(MAX, -1);
+	}
+
 	TStructure stemStructure;
 
 	size_t i = stemLoopRegion.first;
@@ -312,6 +320,7 @@ void structurePartition(Motif &motif){
 
 	int pos = -8;
 	for (auto pair : stemLoops){
+		BracketType btype = pair.first;
 		TRegion region = pair.second;
 		std::cout << pair.first << " " << region.first << " " << region.second << "\n";
 
@@ -325,10 +334,11 @@ void structurePartition(Motif &motif){
 
 	// after locating stem loops, separate structural elements
 	for (auto pair : stemLoops){
+		BracketType btype = pair.first;
 		TRegion region = pair.second;
 
 		// find structural elements
-		//partitionStemLoop(motif, region);
+		partitionStemLoop(motif, btype, region);
 	}
 
 	return;
