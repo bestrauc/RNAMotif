@@ -235,23 +235,38 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 				// check if the corresponding closing bracket follows
 				// or if there is a bulge on the right side
 				if ((consensus[pos+1].second > pos+1) && consensus[right-1].second == -1){
-					std::cout << pos << " " << consensus[pos+1].second << "\n";
+					++pos;
+
+					// add the stem up to the right bulge
+					StructureElement stem;
+
+					std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]\n";
+
+					stem.type = STEM;
+					RNAProfileString leftProfile  = addRNAProfile(stem, i, pos-1, motif.seedAlignment);
+					RNAProfileString rightProfile = addRNAProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+
+					// find the extension of the right bulge and add it
 					// there is one run of unpaired bases from right+1
-					int unpaired = right+1;
-					while (consensus[unpaired].second ==-1) ++unpaired;
-					std::cout << "Left bulge in [" << right+1 << "," << unpaired-1 << "]\n";
+					int unpaired = right-1;
+					while (consensus[unpaired].second ==-1) --unpaired;
+
+					std::cout << "Right bulge in [" << unpaired+1 << "," << right-1 << " " << right - unpaired-1 << "]\n";
 
 					StructureElement bulge;
 
 					bulge.type = LOOP;
-					RNAProfileString bulgeProfile = addRNAProfile(bulge, right+1, unpaired-1, motif.seedAlignment);
+					RNAProfileString bulgeProfile = addRNAProfile(bulge, unpaired+1, right-1, motif.seedAlignment);
 					stemStructure.push_back(bulge);
+
+					i = pos;
 				}
 
 				++pos;
 				right = consensus[pos].second;
 			}
 
+			// add the uninterrupted stem we found so far
 			StructureElement stem;
 
 			std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]\n";
