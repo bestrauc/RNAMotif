@@ -87,7 +87,7 @@ struct AppOptions
 // Functions
 // ==========================================================================
 
-void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record) {
+void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >& records) {
 	// read Stockholm format 
 	std::ifstream inStream(file, std::ios::in);
 
@@ -126,39 +126,39 @@ void read_Stockholm_file(char * file, StockholmRecord<seqan::Rna>& record) {
 
 			// store tag in the respective map
 			if (tag == "GF"){
-				if (record.header.find(feature) == record.header.end())
-					record.header[feature] = value;
+				if (records[0].header.find(feature) == records[0].header.end())
+					records[0].header[feature] = value;
 				// append the tag contents if they were spread over multiple lines
 				else
-					record.header[feature].append(" " + value);
+					records[0].header[feature].append(" " + value);
 			}
 
 			if (tag == "GC"){
-				record.seqence_information[feature] = value;
+				records[0].seqence_information[feature] = value;
 			}
 		}
 		// we have a sequence record
 		else {
 			std::string name, sequence;
 			iss >> name >> sequence;
-			record.seqences[name] = sequence;
-			record.seqNames.push_back(name);
-			record.seqs.push_back(sequence);
+			records[0].seqences[name] = sequence;
+			records[0].seqNames.push_back(name);
+			records[0].seqs.push_back(sequence);
 		}
 	}while (std::getline(inStream, line));
 
-	seqan::resize(seqan::rows(record.alignment), record.seqences.size());
+	seqan::resize(seqan::rows(records[0].alignment), records[0].seqences.size());
 
 	int i = 0;
-	for (auto elem : record.seqences)
+	for (auto elem : records[0].seqences)
 	{
 		//TODO: remove gaps from sequences. Those will be conserved in the align-object.
 
 		// erase all gaps from the string and insert it into the alignment
 		std::string tmp = elem.second;
 		tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
-		seqan::assignSource(seqan::row(record.alignment, i), seqan::RnaString(tmp));
-	    TRow & row = seqan::row(record.alignment, i++);
+		seqan::assignSource(seqan::row(records[0].alignment, i), seqan::RnaString(tmp));
+	    TRow & row = seqan::row(records[0].alignment, i++);
 
 		// find all gap positions in the sequence and insert into alignment
 	    int offset = 0;
@@ -263,9 +263,12 @@ int main(int argc, char const ** argv)
                   << "RNA      \t" << options.rna_file << "\n\n";
     }
 
+    std::vector<StockholmRecord<seqan::Rna> > records;
+    records.push_back(StockholmRecord<seqan::Rna>());
+	read_Stockholm_file(seqan::toCString(options.rna_file), records);
+
     // read the stockholm alignment
-	StockholmRecord<seqan::Rna> record;
-	read_Stockholm_file(seqan::toCString(options.rna_file), record);
+	StockholmRecord<seqan::Rna> record = records[0];
 
 	std::cout << record.alignment << "\n";
 
