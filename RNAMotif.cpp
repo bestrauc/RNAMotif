@@ -94,86 +94,97 @@ void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >&
 	// go to block with metadata (#=GF blocks, no other right now)
 	std::string line;
 
-	do { // skip newlines to the first #= block
-		std::getline(inStream, line);
-	} while (line.substr(0, 2) != "#=");
+	//do { // skip newlines to the first #= block
+	//	std::getline(inStream, line);
+	//} while (line.substr(0, 2) != "#=");
 
-	std::stringstream test;
+	int record_count = 0;
 
-	int line_num = 2;
+	while (std::getline(inStream, line)){
+	    records.push_back(StockholmRecord<seqan::Rna>());
 
-	// read the file and save the lines depending on their flags
-	do {
-		++line_num;
-		std::string tag, feature, value;
-		std::istringstream iss(line);
-		
-		// skip if line is an empty line, a newline or the alignment end \\ line
-		if (line.find_first_not_of("\t\r\n/ ") == std::string::npos){
-			continue;
+		// Skip the #Stockholm and newlines at the start
+		while (line.substr(0, 2) != "#="){
+			std::getline(inStream, line);
 		}
 
-		// check if the line contains metadata
-		if (line[0] == '#'){
-			iss >> tag; 						// get the tag
-			tag = tag.substr(2, tag.size());	// remove #= from tag
-			iss >> feature; 					// get the feature description
-			std::getline(iss, value);		 	// the rest of the line is the value
-			// strip space before the line and newline at the end
-			value.erase(0, value.find_first_not_of(" \t"));
-			value.erase(std::remove(value.begin(), value.end(), '\r'), value.end());
-			value.erase(std::remove(value.begin(), value.end(), '\n'), value.end());
+		while (line.substr(0,2) != "//") {
+			std::string tag, feature, value;
+			std::istringstream iss(line);
 
-			// store tag in the respective map
-			if (tag == "GF"){
-				if (records[0].header.find(feature) == records[0].header.end())
-					records[0].header[feature] = value;
-				// append the tag contents if they were spread over multiple lines
-				else
-					records[0].header[feature].append(" " + value);
+			// skip if line is an empty line, a newline or the alignment end \\ line
+			if (line.find_first_not_of("\t\r\n ") == std::string::npos){
+				std::getline(inStream, line);
+				continue;
 			}
 
-			if (tag == "GC"){
-				records[0].seqence_information[feature] = value;
+			// check if the line contains metadata
+			if (line[record_count] == '#'){
+				iss >> tag; 						// get the tag
+				tag = tag.substr(2, tag.size());	// remove #= from tag
+				iss >> feature; 					// get the feature description
+				std::getline(iss, value);		 	// the rest of the line is the value
+				// strip space before the line and newline at the end
+				value.erase(0, value.find_first_not_of(" \t"));
+				value.erase(std::remove(value.begin(), value.end(), '\r'), value.end());
+				value.erase(std::remove(value.begin(), value.end(), '\n'), value.end());
+
+				// store tag in the respective map
+				if (tag == "GF"){
+					if (records[record_count].header.find(feature) == records[record_count].header.end())
+						records[record_count].header[feature] = value;
+					// append the tag contents if they were spread over multiple lines
+					else
+						records[record_count].header[feature].append(" " + value);
+				}
+
+				if (tag == "GC"){
+					records[record_count].seqence_information[feature] = value;
+				}
+			}
+			// we have a sequence record
+			else {
+				std::string name, sequence;
+				iss >> name >> sequence;
+				records[record_count].seqences[name] = sequence;
+				records[record_count].seqNames.push_back(name);
+				records[record_count].seqs.push_back(sequence);
+			}
+
+			std::getline(inStream, line);
+		};
+
+		seqan::resize(seqan::rows(records[record_count].alignment), records[record_count].seqences.size());
+
+		int i = 0;
+		for (auto elem : records[record_count].seqences)
+		{
+			//TODO: remove gaps from sequences. Those will be conserved in the align-object.
+
+			// erase all gaps from the string and insert it into the alignment
+			std::string tmp = elem.second;
+			tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
+			seqan::assignSource(seqan::row(records[record_count].alignment, i), seqan::RnaString(tmp));
+			TRow & row = seqan::row(records[record_count].alignment, i++);
+
+			// find all gap positions in the sequence and insert into alignment
+			int offset = 0;
+			size_t pos = elem.second.find("-", 0);
+			while (pos != std::string::npos){
+				// find how long the gap is
+				int len = 1;
+				while (elem.second[pos+len] == '-') ++len;
+				//std::cout << pos << " " << len << " " << offset << "\n";
+				seqan::insertGaps(row, pos, len);
+				pos = elem.second.find("-", pos+len);
+				offset += len;
 			}
 		}
-		// we have a sequence record
-		else {
-			std::string name, sequence;
-			iss >> name >> sequence;
-			records[0].seqences[name] = sequence;
-			records[0].seqNames.push_back(name);
-			records[0].seqs.push_back(sequence);
-		}
-	}while (std::getline(inStream, line));
 
-	seqan::resize(seqan::rows(records[0].alignment), records[0].seqences.size());
-
-	int i = 0;
-	for (auto elem : records[0].seqences)
-	{
-		//TODO: remove gaps from sequences. Those will be conserved in the align-object.
-
-		// erase all gaps from the string and insert it into the alignment
-		std::string tmp = elem.second;
-		tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
-		seqan::assignSource(seqan::row(records[0].alignment, i), seqan::RnaString(tmp));
-	    TRow & row = seqan::row(records[0].alignment, i++);
-
-		// find all gap positions in the sequence and insert into alignment
-	    int offset = 0;
-		size_t pos = elem.second.find("-", 0);
-		while (pos != std::string::npos){
-			// find how long the gap is
-			int len = 1;
-			while (elem.second[pos+len] == '-') ++len;
-			//std::cout << pos << " " << len << " " << offset << "\n";
-		    seqan::insertGaps(row, pos, len);
-		    pos = elem.second.find("-", pos+len);
-		    offset += len;
-		}
-
+		record_count++;
 	}
+
+	std::cout << records.size() << " Stockholm records read\n";
 }
 
 // --------------------------------------------------------------------------
@@ -264,7 +275,6 @@ int main(int argc, char const ** argv)
     }
 
     std::vector<StockholmRecord<seqan::Rna> > records;
-    records.push_back(StockholmRecord<seqan::Rna>());
 	read_Stockholm_file(seqan::toCString(options.rna_file), records);
 
     // read the stockholm alignment
