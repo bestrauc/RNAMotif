@@ -240,7 +240,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 					// add the stem up to the right bulge
 					StructureElement stem;
 
-					std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]\n";
+					DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]");
 
 					stem.type = STEM;
 					RNAProfileString leftProfile  = addRNAProfile(stem, i, pos-1, motif.seedAlignment);
@@ -251,7 +251,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 					int unpaired = right-1;
 					while (consensus[unpaired].second ==-1) --unpaired;
 
-					std::cout << "Right bulge in [" << unpaired+1 << "," << right-1 << " " << right - unpaired-1 << "]\n";
+					DEBUG_MSG("Right bulge in [" << unpaired+1 << "," << right-1 << " " << right - unpaired-1 << "]");
 
 					StructureElement bulge;
 
@@ -269,7 +269,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 			// add the uninterrupted stem we found so far
 			StructureElement stem;
 
-			std::cout << "Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]\n";
+			DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]");
 
 			stem.type = STEM;
 			RNAProfileString leftProfile  = addRNAProfile(stem, i, pos-1, motif.seedAlignment);
@@ -291,14 +291,14 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 
 			// Left bulge
 			if (rb - lb == 1){
-				std::cout << "Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]\n";
+				DEBUG_MSG("Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = LOOP;
 				RNAProfileString bulgeProfile = addRNAProfile(structure, pos, run-1, motif.seedAlignment);
 			}
 			// Hairpin (stop the outer loop here since all structures found)
 			else if (rb == run){
-				std::cout << "Hairpin in [" << pos << "," << run-1 << " " << run-pos << "]\n";
+				DEBUG_MSG("Hairpin in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = HAIRPIN;
 				RNAProfileString hairpinProfile = addRNAProfile(structure, pos, run-1, motif.seedAlignment);
@@ -306,7 +306,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 			}
 			// Interior loop with left and right side
 			else{
-				std::cout << "Left loop: " << "[" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: " << lb+1 << "," << rb-1 << " " << rb-1-lb << "\n";
+				DEBUG_MSG("Left loop: [" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: [" << lb+1 << "," << rb-1 << " " << rb-1-lb << "]");
 
 				structure.type = LOOP;
 				RNAProfileString leftProfile  = addRNAProfile(structure, pos, run-1, motif.seedAlignment);
@@ -337,7 +337,7 @@ void structurePartition(Motif &motif){
 	for (auto pair : stemLoops){
 		BracketType btype = pair.first;
 		TRegion region = pair.second;
-		std::cout << pair.first << " " << region.first << " " << region.second << "\n";
+		//std::cout << pair.first << " " << region.first << " " << region.second << "\n";
 
 		// visualize stem loops for debugging
 		//std::cout << std::string(region.first-pos, ' ');
@@ -345,7 +345,7 @@ void structurePartition(Motif &motif){
 		//pos += (region.first-pos) + (region.second-region.first+1);
 	}
 
-	std::cout << "\n";
+	//std::cout << "\n";
 
 	// after locating stem loops, separate structural elements
 	for (auto pair : stemLoops){

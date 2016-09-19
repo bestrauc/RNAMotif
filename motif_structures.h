@@ -39,6 +39,12 @@
 #include <seqan/align.h>
 #include <unordered_map>
 
+#ifndef NDEBUG
+#define DEBUG_MSG(str) do { std::cout << str << std::endl; } while( false )
+#else
+#define DEBUG_MSG(str) do { } while ( false )
+#endif
+
 // ============================================================================
 // Forwards
 // ============================================================================

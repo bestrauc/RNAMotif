@@ -98,28 +98,27 @@ void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >&
 	//	std::getline(inStream, line);
 	//} while (line.substr(0, 2) != "#=");
 
-	int record_count = 0;
-
 	while (std::getline(inStream, line)){
-	    records.push_back(StockholmRecord<seqan::Rna>());
+		StockholmRecord<seqan::Rna> record;
 
 		// Skip the #Stockholm and newlines at the start
-		while (line.substr(0, 2) != "#="){
-			std::getline(inStream, line);
-		}
+		bool new_record;
+		while ( (new_record = std::getline(inStream, line)) && line.substr(0, 2) != "#=");
 
-		while (line.substr(0,2) != "//") {
+		if (!new_record)
+			break;
+
+		do {
 			std::string tag, feature, value;
 			std::istringstream iss(line);
 
 			// skip if line is an empty line, a newline or the alignment end \\ line
 			if (line.find_first_not_of("\t\r\n ") == std::string::npos){
-				std::getline(inStream, line);
 				continue;
 			}
 
 			// check if the line contains metadata
-			if (line[record_count] == '#'){
+			if (line[0] == '#'){
 				iss >> tag; 						// get the tag
 				tag = tag.substr(2, tag.size());	// remove #= from tag
 				iss >> feature; 					// get the feature description
@@ -131,41 +130,43 @@ void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >&
 
 				// store tag in the respective map
 				if (tag == "GF"){
-					if (records[record_count].header.find(feature) == records[record_count].header.end())
-						records[record_count].header[feature] = value;
+					//if (feature == "AC")
+					//	std::cout << record_count << " : " << value << "\n";
+
+					if (record.header.find(feature) == record.header.end())
+						record.header[feature] = value;
 					// append the tag contents if they were spread over multiple lines
 					else
-						records[record_count].header[feature].append(" " + value);
+						record.header[feature].append(" " + value);
 				}
 
 				if (tag == "GC"){
-					records[record_count].seqence_information[feature] = value;
+					record.seqence_information[feature] = value;
 				}
 			}
 			// we have a sequence record
 			else {
 				std::string name, sequence;
 				iss >> name >> sequence;
-				records[record_count].seqences[name] = sequence;
-				records[record_count].seqNames.push_back(name);
-				records[record_count].seqs.push_back(sequence);
+				record.seqences[name] = sequence;
+				record.seqNames.push_back(name);
+				record.seqs.push_back(sequence);
 			}
 
-			std::getline(inStream, line);
-		};
+		} while (std::getline(inStream, line) && line.substr(0,2) != "//");
 
-		seqan::resize(seqan::rows(records[record_count].alignment), records[record_count].seqences.size());
+		seqan::resize(seqan::rows(record.alignment), record.seqences.size());
 
 		int i = 0;
-		for (auto elem : records[record_count].seqences)
+		for (auto elem : record.seqences)
 		{
 			//TODO: remove gaps from sequences. Those will be conserved in the align-object.
 
 			// erase all gaps from the string and insert it into the alignment
 			std::string tmp = elem.second;
 			tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
-			seqan::assignSource(seqan::row(records[record_count].alignment, i), seqan::RnaString(tmp));
-			TRow & row = seqan::row(records[record_count].alignment, i++);
+			seqan::assignSource(seqan::row(record.alignment, i), seqan::RnaString(tmp));
+			TRow & row = seqan::row(record.alignment, i++);
 
 			// find all gap positions in the sequence and insert into alignment
 			int offset = 0;
@@ -181,7 +182,7 @@ void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >&
 			}
 		}
 
-		record_count++;
+		records.push_back(record);
 	}
 
 	std::cout << records.size() << " Stockholm records read\n";
@@ -275,48 +276,60 @@ int main(int argc, char const ** argv)
     }
 
     std::vector<StockholmRecord<seqan::Rna> > records;
+
 	read_Stockholm_file(seqan::toCString(options.rna_file), records);
 
+	std::vector<Motif> motifs(records.size());
+
     // read the stockholm alignment
-	StockholmRecord<seqan::Rna> record = records[0];
+	//StockholmRecord<seqan::Rna> record = records[0];
+	//std::cout << record.alignment << "\n";
 
-	std::cout << record.alignment << "\n";
+	#pragma omp parallel for schedule(dynamic,4)
+	for (size_t k=0; k < records.size(); ++k){
+		StockholmRecord<seqan::Rna> record = records[k];
 
-	// convert Rfam WUSS structure to normal brackets to get a constraint
-	char *constraint_bracket = NULL;
-	if (options.constrain){
-		constraint_bracket = new char[record.seqence_information["SS_cons"].length() + 1];
-		WUSStoPseudoBracket(record.seqence_information["SS_cons"], constraint_bracket);
+		std::cout << record.header["AC"] << "\n";
+		if (record.seqs[0].length() > 1000){
+			std::cout << "Alignment has length " << record.seqs[0].length() << " > 1000 .. skipping.\n";
+			continue;
+		}
+
+		// convert Rfam WUSS structure to normal brackets to get a constraint
+		char *constraint_bracket = NULL;
+		if (options.constrain){
+			constraint_bracket = new char[record.seqence_information["SS_cons"].length() + 1];
+			WUSStoPseudoBracket(record.seqence_information["SS_cons"], constraint_bracket);
+		}
+
+
+		Motif rna_motif;
+		rna_motif.seedAlignment = record.alignment;
+		rna_motif.interactionGraphs.resize(record.seqences.size());
+		rna_motif.interactionPairs.resize(record.seqences.size());
+
+		// build interaction graphs for each sequence
+		int i = 0;
+		for (auto elem : record.seqences)
+		{
+			createInteractions(rna_motif.interactionGraphs[i], rna_motif.interactionPairs[i], elem.second, constraint_bracket);
+			i++;
+		}
+
+		// create structure for the whole multiple alignment
+		DEBUG_MSG("Rfam:   " << record.seqence_information["SS_cons"]);
+		if (options.pseudoknot)
+			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
+		else
+			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, RNALibFold());
+
+		structurePartition(rna_motif);
+
+		motifs[k] = rna_motif;
+		free(constraint_bracket);
 	}
-
-   	int i = 0;
-
-   	Motif rna_motif;
-   	rna_motif.seedAlignment = record.alignment;
-   	rna_motif.interactionGraphs.resize(record.seqences.size());
-   	rna_motif.interactionPairs.resize(record.seqences.size());
-
-	// build interaction graphs for each sequence
-	for (auto elem : record.seqences)
-	{
-		createInteractions(rna_motif.interactionGraphs[i],
-						   rna_motif.interactionPairs[i],
-						   elem.second, constraint_bracket);
-		i++;
-	}
-
-	// create structure for the whole multiple alignment
-	std::cout << "Rfam:   " << record.seqence_information["SS_cons"] << std::endl;
-	if (options.pseudoknot)
-		getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
-	else
-		getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, RNALibFold());
-
-	structurePartition(rna_motif);
 
 	std::cout << std::endl;
-
-	free(constraint_bracket);
 
     return 0;
 }

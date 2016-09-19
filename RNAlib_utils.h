@@ -187,8 +187,10 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 	vrna_mfe(vc, structure);
 	vrna_pf(vc, prob_structure);
 
-	std::cout << "Vienna: " << structure << "\n" << consens_mis((const char**)seqs) << " " << std::endl;
+	DEBUG_MSG("Vienna: " << structure);
+	DEBUG_MSG("        " << consens_mis((const char**)seqs));
 
+	/* TODO: Unbalanced brackets seem to appear?
 	vrna_plist_t *pl1, *pl2;
 	// get dot plot structures
 	pl1 = vrna_plist_from_probs(vc, 0);
@@ -197,6 +199,7 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 	// write dot-plot
 	//	Function used to plot the dot_plot graph
 	(void) PS_dot_plot_list((char*)seqs[0], "prova_dot_plot.ps", pl1, pl1, "");
+	*/
 
 	structureToInteractions(structure, consensusStructure);
 
