@@ -82,10 +82,10 @@ std::unordered_map<char, char> WUSS_Table =
 
 // convert Rfam's WUSS structure notation to RNAlib's pseudo-bracket notation
 // NOTE: RNAlib's pseudo-bracket notation cannot handle pseudoknots
-void WUSStoPseudoBracket(std::string& structure, char* pseudoBracketString){
+void WUSStoPseudoBracket(std::string const & structure, char* pseudoBracketString){
 	int i=0;
 
-	for (char& c: structure){
+	for (char const & c: structure){
 		auto iter = WUSS_Table.find(c);
 		char replace = (iter == WUSS_Table.end()) ? '.' : iter->second;
 		pseudoBracketString[i++] = replace;
@@ -161,7 +161,7 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const & tag){
+void getConsensusStructure(StockholmRecord<seqan::Rna> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const & tag){
    	char** seqs = new char*[record.seqences.size()+1];
    	seqs[record.seqences.size()] = 0;
 
@@ -174,9 +174,9 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 		++i;
 	}
 
-	char *structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
-	char *prob_structure  = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
-	vrna_fold_compound_t *vc = vrna_fold_compound_comparative((const char**)seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+	char *structure  	 = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
+	char *prob_structure = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
+	vrna_fold_compound_t *vc 	= vrna_fold_compound_comparative((const char**)seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 	// add constraints if available
 	if (constraint){
@@ -203,9 +203,16 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> & record, TInteractionPai
 
 	structureToInteractions(structure, consensusStructure);
 
+	// free all used RNAlib data structures
 	vrna_fold_compound_free(vc);
 	free(structure);
 	free(prob_structure);
+
+	// free the sequence array (terminated with a 0 at the end)
+	for (size_t k = 0; seqs[k] != 0; ++k)
+		free(seqs[k]);
+
+	free(seqs);
 }
 
 #endif  // #ifndef APPS_RNAMOTIF_RNALIB_UTILS_H_

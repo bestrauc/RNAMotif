@@ -79,7 +79,8 @@ struct AppOptions
 
     AppOptions() :
         verbosity(1),
-		constrain(0)
+		constrain(0),
+		pseudoknot(0)
     {}
 };
 
@@ -287,19 +288,20 @@ int main(int argc, char const ** argv)
 
 	#pragma omp parallel for schedule(dynamic,4)
 	for (size_t k=0; k < records.size(); ++k){
-		StockholmRecord<seqan::Rna> record = records[k];
+		StockholmRecord<seqan::Rna> const &record = records[k];
 
-		std::cout << record.header["AC"] << "\n";
-		if (record.seqs[0].length() > 1000){
-			std::cout << "Alignment has length " << record.seqs[0].length() << " > 1000 .. skipping.\n";
+		std::cout << record.header.at("AC") << "\n";
+		int seq_len = record.seqs[0].length();
+		if (seq_len > 1000){
+			std::cout << "Alignment has length " << seq_len << " > 1000 .. skipping.\n";
 			continue;
 		}
 
 		// convert Rfam WUSS structure to normal brackets to get a constraint
 		char *constraint_bracket = NULL;
 		if (options.constrain){
-			constraint_bracket = new char[record.seqence_information["SS_cons"].length() + 1];
-			WUSStoPseudoBracket(record.seqence_information["SS_cons"], constraint_bracket);
+			constraint_bracket = new char[record.seqence_information.at("SS_cons").length() + 1];
+			WUSStoPseudoBracket(record.seqence_information.at("SS_cons"), constraint_bracket);
 		}
 
 
@@ -312,12 +314,12 @@ int main(int argc, char const ** argv)
 		int i = 0;
 		for (auto elem : record.seqences)
 		{
-			createInteractions(rna_motif.interactionGraphs[i], rna_motif.interactionPairs[i], elem.second, constraint_bracket);
+			//createInteractions(rna_motif.interactionGraphs[i], rna_motif.interactionPairs[i], elem.second, constraint_bracket);
 			i++;
 		}
 
 		// create structure for the whole multiple alignment
-		DEBUG_MSG("Rfam:   " << record.seqence_information["SS_cons"]);
+		DEBUG_MSG("Rfam:   " << record.seqence_information.at("SS_cons"));
 		if (options.pseudoknot)
 			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
 		else
@@ -326,7 +328,9 @@ int main(int argc, char const ** argv)
 		structurePartition(rna_motif);
 
 		motifs[k] = rna_motif;
-		free(constraint_bracket);
+
+		if (options.constrain)
+			free(constraint_bracket);
 	}
 
 	std::cout << std::endl;

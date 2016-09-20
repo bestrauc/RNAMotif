@@ -156,7 +156,7 @@ RNAProfileString addRNAProfile(StructureElement &structureElement, unsigned star
 	return profileString;
 }
 
-TSequenceRegions findStemLoops(TInteractionPairs &consensus){
+TSequenceRegions findStemLoops(TInteractionPairs const &consensus){
 	TSequenceRegions stemLoops;
 
 	std::vector<std::stack<int> > pairStacks;
@@ -333,6 +333,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 void structurePartition(Motif &motif){
 	TSequenceRegions stemLoops = findStemLoops(motif.consensusStructure);
 
+	/*
 	int pos = -8;
 	for (auto pair : stemLoops){
 		BracketType btype = pair.first;
@@ -343,7 +344,7 @@ void structurePartition(Motif &motif){
 		//std::cout << std::string(region.first-pos, ' ');
 		//std::cout << std::string(region.second-region.first+1, '+');
 		//pos += (region.first-pos) + (region.second-region.first+1);
-	}
+	} */
 
 	//std::cout << "\n";
 
