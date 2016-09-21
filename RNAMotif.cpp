@@ -76,6 +76,7 @@ struct AppOptions
 
     // The first (and only) argument of the program is stored here.
     seqan::CharString rna_file;
+    seqan::CharString out_file;
 
     AppOptions() :
         verbosity(1),
@@ -204,11 +205,12 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     setDate(parser, __DATE__);
 
     // Define usage line and long description.
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] <\\fISEED ALIGNMENT\\fP>");
+    addUsageLine(parser, "[\\fIOPTIONS\\fP] <\\fISEED ALIGNMENT\\fP> <\\fIMOTIF OUTPUT\\fP>");
     addDescription(parser, "Generate a searchable RNA motif from a seed alignment.");
 
     // We require one argument.
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
+    addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "MOTIF FILE"));
 
     addOption(parser, seqan::ArgParseOption("ps", "pseudoknot", "Predict structure with IPknot to include pseuoknots."));
     addOption(parser, seqan::ArgParseOption("co", "constrain", "Constrain individual structures with the seed consensus structure."));
@@ -239,6 +241,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     if (isSet(parser, "very-verbose"))
         options.verbosity = 3;
     seqan::getArgumentValue(options.rna_file, parser, 0);
+    seqan::getArgumentValue(options.out_file, parser, 1);
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -273,7 +276,8 @@ int main(int argc, char const ** argv)
                   << "VERBOSITY\t" << options.verbosity << '\n'
                   << "CONSTRAINT\t" << options.constrain << '\n'
 				  << "PSEUDOKNOTS\t" << options.pseudoknot << '\n'
-                  << "RNA      \t" << options.rna_file << "\n\n";
+				  << "RNA      \t" << options.rna_file << '\n'
+                  << "OUTPUT   \t" << options.out_file << "\n\n";
     }
 
     std::vector<StockholmRecord<seqan::Rna> > records;
@@ -308,6 +312,7 @@ int main(int argc, char const ** argv)
 
 
 		Motif rna_motif;
+		rna_motif.header = record.header;
 		rna_motif.seedAlignment = record.alignment;
 		rna_motif.interactionGraphs.resize(record.seqences.size());
 		rna_motif.interactionPairs.resize(record.seqences.size());
