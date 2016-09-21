@@ -113,7 +113,7 @@ void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >&
 			std::string tag, feature, value;
 			std::istringstream iss(line);
 
-			// skip if line is an empty line, a newline or the alignment end \\ line
+			// skip if line is an empty line or a newline (i.e. if there is no non-whitespace)
 			if (line.find_first_not_of("\t\r\n ") == std::string::npos){
 				continue;
 			}
@@ -131,9 +131,6 @@ void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >&
 
 				// store tag in the respective map
 				if (tag == "GF"){
-					//if (feature == "AC")
-					//	std::cout << record_count << " : " << value << "\n";
-
 					if (record.header.find(feature) == record.header.end())
 						record.header[feature] = value;
 					// append the tag contents if they were spread over multiple lines
@@ -142,16 +139,19 @@ void read_Stockholm_file(char * file, std::vector<StockholmRecord<seqan::Rna> >&
 				}
 
 				if (tag == "GC"){
-					record.seqence_information[feature] = value;
+					record.seqence_information[feature].append(value);
 				}
 			}
 			// we have a sequence record
 			else {
 				std::string name, sequence;
 				iss >> name >> sequence;
-				record.seqences[name] = sequence;
-				record.seqNames.push_back(name);
-				record.seqs.push_back(sequence);
+				// if sequence is new - add to dictionary
+				if (record.seqences.find(name) == record.seqences.end())
+					record.sequence_names.push_back(name);
+
+				// append to empty string if new, else append to existing string
+				record.seqences[name].append(sequence);
 			}
 
 		} while (std::getline(inStream, line) && line.substr(0,2) != "//");
@@ -286,12 +286,14 @@ int main(int argc, char const ** argv)
 	//StockholmRecord<seqan::Rna> record = records[0];
 	//std::cout << record.alignment << "\n";
 
-	#pragma omp parallel for schedule(dynamic,4)
+	//#pragma omp parallel for //schedule(dynamic,4)
 	for (size_t k=0; k < records.size(); ++k){
 		StockholmRecord<seqan::Rna> const &record = records[k];
 
-		std::cout << record.header.at("AC") << "\n";
-		int seq_len = record.seqs[0].length();
+
+		std::cout << record.header.at("AC") << " : " << record.header.at("ID") << "\n";
+
+		int seq_len = record.seqences.begin()->second.length();
 		if (seq_len > 1000){
 			std::cout << "Alignment has length " << seq_len << " > 1000 .. skipping.\n";
 			continue;

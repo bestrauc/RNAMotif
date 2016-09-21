@@ -95,10 +95,11 @@ struct StockholmRecord {
 	// Raw string data		===========================
 	// header (GF tags -> tag value)
 	std::unordered_map<std ::string, std::string > header;
+
 	// seqence names -> sequence maps
 	std::unordered_map<std::string, std::string > seqences;
-	std::vector<std::string > seqNames;
-	std::vector<std::string > seqs;
+	std::vector<std::string > sequence_names;
+
 	// per column (GC) -> annotation string
 	std::unordered_map<std::string, std::string > seqence_information;
 
@@ -154,23 +155,25 @@ std::unordered_map<char, BracketType> bracket_to_type =
 typedef std::vector<std::pair<BracketType, int> > TInteractionPairs;
 typedef std::pair<int, int> TRegion;
 
-//typedef std::vector<int> TInteractionPairs;
 typedef std::vector<std::pair<BracketType, TRegion> > TSequenceRegions;
 typedef std::vector<StructureElement> TStructure;
 typedef std::vector<TStructure> TStemLoopProfile;
 
 struct Motif{
+	// header data, same as the Stockholm header.
+	std::unordered_map<std ::string, std::string > header;
+
 	// stores interaction information for the N sequences in a N-vector
 	std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
 	std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
 
-	//
+	// the consensus interactions for the whole alignment
 	TInteractionPairs consensusStructure;
 
 	// the alignment structure of the seed RNA family
 	TAlign seedAlignment;
 
-	//
+	// the profiles for the individual stem loops
 	TStemLoopProfile profile;
 };
 

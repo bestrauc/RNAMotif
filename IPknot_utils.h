@@ -510,11 +510,15 @@ output_fa(std::ostream& os,
 void getConsensusStructure(StockholmRecord<seqan::Rna> const & record, TInteractionPairs &consensusStructure, const char* constraint, IPknotFold const & tag){
 	std::list<std::string> names;
 	std::list<std::string> seqs;
-	//for (auto elem : record.seqences){
-	for (size_t i = 0; i < record.seqences.size(); ++i){
-		names.push_back(record.seqNames[i]);
-		seqs.push_back(record.seqs[i]);
+	for (std::string name : record.sequence_names){
+		names.push_back(name);
+		seqs.push_back(record.seqences.at(name));
 	}
+
+	//for (size_t i = 0; i < record.seqences.size(); ++i){
+		//names.push_back(record.seqNames[i]);
+		//seqs.push_back(record.seqs[i]);
+	//}
 
 	uint pk_level=0;
 	bool isolated_bp=false;

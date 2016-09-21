@@ -95,7 +95,7 @@ void WUSStoPseudoBracket(std::string const & structure, char* pseudoBracketStrin
 	pseudoBracketString[i] = 0;
 }
 
-void structureToInteractions(char* structure, TInteractionPairs &interactions){
+void structureToInteractions(const char * const structure, TInteractionPairs &interactions){
 	short * struc_table = vrna_ptable(structure);
 
 	interactions.resize(struc_table[0]);
@@ -156,6 +156,7 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	// save sequence structure
 	structureToInteractions(structure, interPairs);
 
+	free(pl1);
 	free(structure);
 	free(weird_structure);
 	vrna_fold_compound_free(vc);
@@ -190,6 +191,8 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> const & record, TInteract
 	DEBUG_MSG("Vienna: " << structure);
 	DEBUG_MSG("        " << consens_mis((const char**)seqs));
 
+	structureToInteractions(structure, consensusStructure);
+
 	/* TODO: Unbalanced brackets seem to appear?
 	vrna_plist_t *pl1, *pl2;
 	// get dot plot structures
@@ -201,12 +204,10 @@ void getConsensusStructure(StockholmRecord<seqan::Rna> const & record, TInteract
 	(void) PS_dot_plot_list((char*)seqs[0], "prova_dot_plot.ps", pl1, pl1, "");
 	*/
 
-	structureToInteractions(structure, consensusStructure);
-
 	// free all used RNAlib data structures
-	vrna_fold_compound_free(vc);
 	free(structure);
 	free(prob_structure);
+	vrna_fold_compound_free(vc);
 
 	// free the sequence array (terminated with a 0 at the end)
 	for (size_t k = 0; seqs[k] != 0; ++k)
