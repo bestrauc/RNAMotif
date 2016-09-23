@@ -36,6 +36,7 @@
 #define APPS_RNAMOTIF_RNALIB_UTILS_H_
 
 #include "motif_structures.h"
+#include "stockholm_file.h"
 
 // Import RNAlib. 'extern "C"', since it's a C library
 extern "C"{
@@ -162,7 +163,7 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(StockholmRecord<seqan::Rna> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const & tag){
+void getConsensusStructure(seqan::StockholmRecord<seqan::Rna> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const &){
    	char** seqs = new char*[record.seqences.size()+1];
    	seqs[record.seqences.size()] = 0;
 

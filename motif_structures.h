@@ -38,6 +38,7 @@
 // SeqAn headers
 #include <seqan/align.h>
 #include <unordered_map>
+#include "stockholm_file.h"
 
 #ifndef NDEBUG
 #define DEBUG_MSG(str) do { std::cout << str << std::endl; } while( false )
@@ -80,31 +81,6 @@ typedef seqan::Tag<RNALibFold__> RNALibFold;
 
 struct IPknotFold__;
 typedef seqan::Tag<IPknotFold__> IPknotFold;
-
-
-// Alphabets usually found in Stockholm format files are Rna or AminoAcid
-template <typename TAlphabet>
-struct StockholmRecord {
-	// SeqAn specific data	==========================
-	// store the alignment given in the Stockholm file
-	typedef seqan::String<TAlphabet> TSequence;
-	typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;
-
-	TAlign alignment;
-
-	// Raw string data		===========================
-	// header (GF tags -> tag value)
-	std::unordered_map<std ::string, std::string > header;
-
-	// seqence names -> sequence maps
-	std::unordered_map<std::string, std::string > seqences;
-	std::vector<std::string > sequence_names;
-
-	// per column (GC) -> annotation string
-	std::unordered_map<std::string, std::string > seqence_information;
-
-	//TODO: Maybe support per-sequence (GS) and per-residue (GR) annotation
-};
 
 struct InteractionGraph {
 	std::vector<TUVertexDescriptor > vertices;

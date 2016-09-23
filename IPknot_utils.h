@@ -507,7 +507,7 @@ output_fa(std::ostream& os,
 /* End of IPknot functions */
 
 // reads the multiple alignment sequences into the IPknot Aln object
-void getConsensusStructure(StockholmRecord<seqan::Rna> const & record, TInteractionPairs &consensusStructure, const char* constraint, IPknotFold const & tag){
+void getConsensusStructure(seqan::StockholmRecord<seqan::Rna> const & record, TInteractionPairs &consensusStructure, const char* constraint, IPknotFold const &){
 	std::list<std::string> names;
 	std::list<std::string> seqs;
 	for (std::string name : record.sequence_names){

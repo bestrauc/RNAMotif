@@ -39,16 +39,150 @@
 // Forwards
 // ============================================================================
 
+namespace seqan{
+
+struct Stockholm_;
+typedef Tag<Stockholm_> Stockholm;
+
+// ============================================================================
+// Typedefs
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Type StockholmFileIn
+// ----------------------------------------------------------------------------
+
+/*!
+ * @class StockholmFileIn
+ * @signature typedef FormattedFile<Stockholm, Input> StockholmFileIn;
+ * @extends FormattedFileIn
+ * @brief Class for reading Stockholm files.
+ */
+
+typedef FormattedFile<Stockholm, Input>	StockholmFileIn;
+
+// ----------------------------------------------------------------------------
+// Typedef StockholmFileOut
+// ----------------------------------------------------------------------------
+
+/*!
+ * @class StockholmFileOut
+ * @signature typedef FormattedFile<Stockholm, Output> StockholmFileOut;
+ * @extends FormattedFileOut
+ * @brief Class for writing Stockholm files.
+ *
+ * @see StockholmHeader
+ * @see StockholmRecord
+ */
+
+typedef FormattedFile<Stockholm, Output>  StockholmFileOut;
+
+
 // ============================================================================
 // Tags, Classes, Enums
 // ============================================================================
+
+/*!
+ * @class StockholmContext
+ * @headerfile <stockholm_io.h>
+ * @brief Context to use for Stockholm file I/O.
+ *
+ * @signature struct StockholmContext;
+ */
+struct StockholmContext
+{
+    /*!
+     * @var String StockholmContext::buffer
+     * @brief Buffer used during I/O.
+     */
+    seqan::CharString buffer;
+};
+
+// Alphabets usually found in Stockholm format files are Rna or AminoAcid
+template <typename TAlphabet>
+struct StockholmRecord {
+	// SeqAn specific data	==========================
+	// store the alignment given in the Stockholm file
+	typedef seqan::String<TAlphabet> TSequence;
+	typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;
+
+	TAlign alignment;
+
+	// Raw string data		===========================
+	// header (GF tags -> tag value)
+	std::unordered_map<std ::string, std::string > header;
+
+	// seqence names -> sequence maps
+	std::unordered_map<std::string, std::string > seqences;
+	std::vector<std::string > sequence_names;
+
+	// per column (GC) -> annotation string
+	std::unordered_map<std::string, std::string > seqence_information;
+
+	//TODO: Maybe support per-sequence (GS) and per-residue (GR) annotation
+};
 
 // ============================================================================
 // Metafunctions
 // ============================================================================
 
+// ----------------------------------------------------------------------------
+// Class MagicHeader
+// ----------------------------------------------------------------------------
+
+template <typename T>
+struct MagicHeader<Stockholm, T> :
+    public MagicHeader<Nothing, T> {};
+
+// ----------------------------------------------------------------------------
+// Class FileExtensions
+// ----------------------------------------------------------------------------
+
+template <typename T>
+struct FileExtensions<Stockholm, T>
+{
+    static char const * VALUE[1];    // default is one extension
+};
+
+template <typename T>
+char const * FileExtensions<Stockholm, T>::VALUE[1] =
+{
+    ".msa"     // default output extension
+};
+
+// ----------------------------------------------------------------------------
+// Metafunction FormattedFileContext
+// ----------------------------------------------------------------------------
+
+template <typename TDirection, typename TSpec, typename TStorageSpec>
+struct FormattedFileContext<FormattedFile<Stockholm, TDirection, TSpec>, TStorageSpec>
+{
+    typedef StockholmContext Type;
+};
+
+// ----------------------------------------------------------------------------
+// Metafunction FileFormats
+// ----------------------------------------------------------------------------
+
+template <typename TDirection, typename TSpec>
+struct FileFormat<FormattedFile<Stockholm, TDirection, TSpec> >
+{
+    typedef Stockholm Type;
+};
+
+
 // ============================================================================
 // Functions
 // ============================================================================
+
+// convient Stockholm variant
+template <typename TAlphabet, typename TSpec>
+inline void
+readRecord(StockholmRecord<TAlphabet> & record, FormattedFile<Stockholm, Input, TSpec> & file)
+{
+    readRecord(record, context(file), file.iter, file.format);
+}
+
+}
 
 #endif  // #ifndef APPS_RNAMOTIF_STOCKHOLM_FILE_H_
