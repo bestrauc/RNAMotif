@@ -53,6 +53,54 @@
 #include "stockholm_io.h"
 
 
+// -----------
+
+#ifdef _WIN32
+#include <Windows.h>
+#else
+#include <sys/time.h>
+#include <ctime>
+#endif
+
+/* Returns the amount of milliseconds elapsed since the UNIX epoch. Works on both
+ * windows and linux. */
+
+uint64_t GetTimeMs64()
+{
+#ifdef _WIN32
+ /* Windows */
+ FILETIME ft;
+ LARGE_INTEGER li;
+
+ /* Get the amount of 100 nano seconds intervals elapsed since January 1, 1601 (UTC) and copy it
+  * to a LARGE_INTEGER structure. */
+ GetSystemTimeAsFileTime(&ft);
+ li.LowPart = ft.dwLowDateTime;
+ li.HighPart = ft.dwHighDateTime;
+
+ uint64_t ret = li.QuadPart;
+ ret -= 116444736000000000LL; /* Convert from file time to UNIX epoch time. */
+ ret /= 10000; /* From 100 nano seconds (10^-7) to 1 millisecond (10^-3) intervals */
+
+ return ret;
+#else
+ /* Linux */
+ struct timeval tv;
+
+ gettimeofday(&tv, NULL);
+
+ uint64_t ret = tv.tv_usec;
+ /* Convert from micro seconds (10^-6) to milliseconds (10^-3) */
+ ret /= 1000;
+
+ /* Adds the seconds (10^0) after converting them to milliseconds (10^-3) */
+ ret += (tv.tv_sec * 1000);
+
+ return ret;
+#endif
+}
+
+
 // ==========================================================================
 // Classes
 // ==========================================================================
@@ -177,16 +225,29 @@ int main(int argc, char const ** argv)
                   << "OUTPUT   \t" << options.out_file << "\n\n";
     }
 
-    seqan::StockholmRecord<seqan::Rna> test_record;
+    std::vector<seqan::StockholmRecord<seqan::Rna>> test_records;
+
+    uint64_t start = GetTimeMs64();
 
     seqan::StockholmFileIn stockFileIn;
     seqan::open(stockFileIn, seqan::toCString(options.rna_file));
 
-    seqan::readRecord(test_record, stockFileIn);
+    while (!seqan::atEnd(stockFileIn)){
+    	seqan::StockholmRecord<seqan::Rna> test_record;
+		seqan::readRecord(test_record, stockFileIn);
+		test_records.push_back(test_record);
+    }
+
+    std::cout << test_records.size() << " records read\n";
+    std::cout << "Time: " << GetTimeMs64() - start << "ms \n";
 
     std::vector<seqan::StockholmRecord<seqan::Rna> > records;
 
+    start = GetTimeMs64();
+
 	read_Stockholm_file(seqan::toCString(options.rna_file), records);
+
+	std::cout << "Time: " << GetTimeMs64() - start << "ms \n";
 
 	std::vector<Motif> motifs(records.size());
 

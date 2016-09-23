@@ -130,9 +130,21 @@ struct StockholmRecord {
 // Class MagicHeader
 // ----------------------------------------------------------------------------
 
+//template <typename T>
+//struct MagicHeader<Stockholm, T> :
+//    public MagicHeader<Nothing, T> {};
+
 template <typename T>
-struct MagicHeader<Stockholm, T> :
-    public MagicHeader<Nothing, T> {};
+struct MagicHeader<Stockholm, T>
+{
+    static unsigned char const VALUE[11];
+};
+
+template <typename T>
+unsigned char const MagicHeader<Stockholm, T>::VALUE[11] =
+{
+    '#', ' ', 'S', 'T', 'O', 'C', 'K', 'H', 'O', 'L', 'M'  // Stockholm format's magic header
+};
 
 // ----------------------------------------------------------------------------
 // Class FileExtensions

@@ -160,21 +160,96 @@ void readRecord(TRecord& record, TContext & context, TForwardIter & iter, Stockh
 	seqan::CharString & buffer = context.buffer;
 
 	// go to the start: "# STOCKHOLM 1.0"
-	//skipUntil(iter, EqualsChar<'#'>());
+	skipUntil(iter, EqualsChar<'#'>());
 	readLine(buffer, iter);
-	std::cout << "TEST: " << buffer << "\n";
+	if (buffer != "# STOCKHOLM 1.0"){
+		ParseError("'# STOCKHOLM 1.0' header not found. Valid Stockholm format?");
+	}
 
-	readLine(buffer, iter);
-	std::cout << "TEST: " << buffer << "\n";
+	skipUntil(iter, NotFunctor<IsWhitespace>());
 
-	readLine(buffer, iter);
-	std::cout << "TEST: " << buffer << "\n";
+	do{
+		// both if-branches end with readUntil(..,IsNewLine) -> read one line
+		if (value(iter) == '#'){
+			std::string tag, feature, val;
 
-	readLine(buffer, iter);
-	std::cout << "TEST: " << buffer << "\n";
+			// skip '#='
+			skipUntil(iter, IsAlpha());
+			readUntil(tag, iter, IsWhitespace());
+			skipUntil(iter, NotFunctor<IsWhitespace>());
+			readUntil(feature, iter, IsWhitespace());
+			skipUntil(iter, NotFunctor<IsWhitespace>());
+			readUntil(val, iter, IsNewline());
 
-	std::cout << record.header.size() << "\n";
+			//std::cout << tag << "," << feature << "," << val << "\n";
 
+			// store tag in the respective map
+			if (tag == "GF"){
+				if (record.header.find(feature) == record.header.end())
+					record.header[feature] = val;
+				// append the tag contents if they were spread over multiple lines
+				else
+					record.header[feature].append(" " + val);
+			}
+
+			if (tag == "GC"){
+				record.seqence_information[feature].append(val);
+			}
+		}
+		else{
+			std::string name, sequence;
+
+			readUntil(name, iter, IsWhitespace());
+			skipUntil(iter, NotFunctor<IsWhitespace>());
+			readUntil(sequence, iter, IsNewline());
+
+			//std::cout << name << "," << sequence << "\n";
+
+			// if sequence is new - add to dictionary
+			if (record.seqences.find(name) == record.seqences.end())
+				record.sequence_names.push_back(name);
+
+			// append to empty string if new, else append to existing string
+			record.seqences[name].append(sequence);
+		}
+
+		// skip possibly empty lines
+		skipUntil(iter, NotFunctor<IsWhitespace>());
+
+	// end the record at the '//' line
+	} while (value(iter) != '/');
+	//TODO: end of record is actually '//', but we just check for '/' ?
+
+	// skip to start of next record (if possible, else we get to the end of the file)
+	skipUntil(iter, IsWhitespace());
+	skipUntil(iter, NotFunctor<IsWhitespace>());
+
+	seqan::resize(seqan::rows(record.alignment), record.seqences.size());
+
+	int i = 0;
+	for (auto elem : record.seqences)
+	{
+		//TODO: remove gaps from sequences. Those will be conserved in the align-object.
+
+		// erase all gaps from the string and insert it into the alignment
+		std::string tmp = elem.second;
+		tmp.erase(std::remove(tmp.begin(), tmp.end(), '-'), tmp.end());
+		seqan::assignSource(seqan::row(record.alignment, i), seqan::RnaString(tmp));
+		TRow & row = seqan::row(record.alignment, i++);
+
+		// find all gap positions in the sequence and insert into alignment
+		int offset = 0;
+		size_t pos = elem.second.find("-", 0);
+		while (pos != std::string::npos){
+			// find how long the gap is
+			int len = 1;
+			while (elem.second[pos+len] == '-') ++len;
+			//std::cout << pos << " " << len << " " << offset << "\n";
+			seqan::insertGaps(row, pos, len);
+			pos = elem.second.find("-", pos+len);
+			offset += len;
+		}
+	}
 }
 
 }
