@@ -36,6 +36,7 @@
 #include <seqan/basic.h>
 #include <seqan/sequence.h>
 #include <seqan/arg_parse.h>
+#include <seqan/seq_io.h>
 
 // C++ headers
 #include <iostream>
@@ -52,6 +53,8 @@
 #include "stockholm_file.h"
 #include "stockholm_io.h"
 
+
+#include <seqan/index.h>
 
 // -----------
 
@@ -117,6 +120,7 @@ struct AppOptions
 {
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
+    int fold_length;
     bool constrain;
     bool pseudoknot;
 
@@ -157,6 +161,9 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "MOTIF FILE"));
 
+    addOption(parser, seqan::ArgParseOption("ml", "max-length",       "Maximum sequence length to fold", seqan::ArgParseOption::INTEGER));
+    setDefaultValue(parser, "max-length", 1000);
+
     addOption(parser, seqan::ArgParseOption("ps", "pseudoknot", "Predict structure with IPknot to include pseuoknots."));
     addOption(parser, seqan::ArgParseOption("co", "constrain", "Constrain individual structures with the seed consensus structure."));
     addOption(parser, seqan::ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
@@ -187,6 +194,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
         options.verbosity = 3;
     seqan::getArgumentValue(options.rna_file, parser, 0);
     seqan::getArgumentValue(options.out_file, parser, 1);
+    getOptionValue(options.fold_length, parser, "max-length");
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -221,11 +229,12 @@ int main(int argc, char const ** argv)
                   << "VERBOSITY\t" << options.verbosity << '\n'
                   << "CONSTRAINT\t" << options.constrain << '\n'
 				  << "PSEUDOKNOTS\t" << options.pseudoknot << '\n'
+				  << "MAX LENGTH\t" << options.fold_length << '\n'
 				  << "RNA      \t" << options.rna_file << '\n'
                   << "OUTPUT   \t" << options.out_file << "\n\n";
     }
 
-    std::vector<seqan::StockholmRecord<seqan::Rna>> test_records;
+    std::vector<seqan::StockholmRecord<seqan::Rna>> records;
 
     uint64_t start = GetTimeMs64();
 
@@ -233,29 +242,17 @@ int main(int argc, char const ** argv)
     seqan::open(stockFileIn, seqan::toCString(options.rna_file));
 
     while (!seqan::atEnd(stockFileIn)){
-    	seqan::StockholmRecord<seqan::Rna> test_record;
-		seqan::readRecord(test_record, stockFileIn);
-		test_records.push_back(test_record);
+    	seqan::StockholmRecord<seqan::Rna> record;
+		seqan::readRecord(record, stockFileIn);
+		records.push_back(record);
     }
 
-    std::cout << test_records.size() << " records read\n";
+    std::cout << records.size() << " records read\n";
     std::cout << "Time: " << GetTimeMs64() - start << "ms \n";
-
-    std::vector<seqan::StockholmRecord<seqan::Rna> > records;
-
-    start = GetTimeMs64();
-
-	read_Stockholm_file(seqan::toCString(options.rna_file), records);
-
-	std::cout << "Time: " << GetTimeMs64() - start << "ms \n";
 
 	std::vector<Motif> motifs(records.size());
 
-    // read the stockholm alignment
-	//StockholmRecord<seqan::Rna> record = records[0];
-	//std::cout << record.alignment << "\n";
-
-	#pragma omp parallel for //schedule(dynamic,4)
+	#pragma omp parallel for schedule(dynamic,4)
 	for (size_t k=0; k < records.size(); ++k){
 		seqan::StockholmRecord<seqan::Rna> const &record = records[k];
 
@@ -263,8 +260,8 @@ int main(int argc, char const ** argv)
 		std::cout << record.header.at("AC") << " : " << record.header.at("ID") << "\n";
 
 		int seq_len = record.seqences.begin()->second.length();
-		if (seq_len > 1000){
-			std::cout << "Alignment has length " << seq_len << " > 1000 .. skipping.\n";
+		if (seq_len > options.fold_length){
+			std::cout << "Alignment has length " << seq_len << " > " << options.fold_length << " .. skipping.\n";
 			continue;
 		}
 
@@ -304,6 +301,24 @@ int main(int argc, char const ** argv)
 		if (options.constrain)
 			free(constraint_bracket);
 	}
+
+	// possible refactor this into separate program
+
+    seqan::CharString seqFileName = "/home/benni/Dokumente/Dropbox/Abschlussarbeit/Masterarbeit/data/Rfam_bench.fa";
+
+    seqan::StringSet<seqan::CharString> ids;
+    seqan::StringSet<seqan::Rna5String> seqs;
+
+    seqan::SeqFileIn seqFileIn(toCString(seqFileName));
+    readRecords(ids, seqs, seqFileIn);
+
+	typedef seqan::FMIndexConfig<void, unsigned> TConfig;
+	typedef seqan::FMIndex<void, TConfig> TFMIndex;
+	typedef seqan::Index<seqan::StringSet<seqan::Rna5String>, TFMIndex > TBiDirIndex;
+	TBiDirIndex index(seqs);
+	seqan::indexRequire(index, seqan::FibreSA());
+
+    seqan::Finder<TBiDirIndex> indexFinder(index);
 
 	std::cout << std::endl;
 

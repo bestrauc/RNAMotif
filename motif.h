@@ -333,21 +333,6 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 void structurePartition(Motif &motif){
 	TSequenceRegions stemLoops = findStemLoops(motif.consensusStructure);
 
-	/*
-	int pos = -8;
-	for (auto pair : stemLoops){
-		BracketType btype = pair.first;
-		TRegion region = pair.second;
-		//std::cout << pair.first << " " << region.first << " " << region.second << "\n";
-
-		// visualize stem loops for debugging
-		//std::cout << std::string(region.first-pos, ' ');
-		//std::cout << std::string(region.second-region.first+1, '+');
-		//pos += (region.first-pos) + (region.second-region.first+1);
-	} */
-
-	//std::cout << "\n";
-
 	// after locating stem loops, separate structural elements
 	for (auto pair : stemLoops){
 		BracketType btype = pair.first;
