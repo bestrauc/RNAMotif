@@ -126,7 +126,7 @@ struct AppOptions
 
     // The first (and only) argument of the program is stored here.
     seqan::CharString rna_file;
-    seqan::CharString out_file;
+    seqan::CharString genome_file;
 
     AppOptions() :
         verbosity(1),
@@ -154,12 +154,12 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     setDate(parser, __DATE__);
 
     // Define usage line and long description.
-    addUsageLine(parser, "[\\fIOPTIONS\\fP] <\\fISEED ALIGNMENT\\fP> <\\fIMOTIF OUTPUT\\fP>");
+    addUsageLine(parser, "[\\fIOPTIONS\\fP] <\\fISEED ALIGNMENT\\fP> <\\fIGENOME FILE\\fP>");
     addDescription(parser, "Generate a searchable RNA motif from a seed alignment.");
 
     // We require one argument.
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
-    addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "MOTIF FILE"));
+    addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "GENOME FILE"));
 
     addOption(parser, seqan::ArgParseOption("ml", "max-length",       "Maximum sequence length to fold", seqan::ArgParseOption::INTEGER));
     setDefaultValue(parser, "max-length", 1000);
@@ -193,7 +193,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     if (isSet(parser, "very-verbose"))
         options.verbosity = 3;
     seqan::getArgumentValue(options.rna_file, parser, 0);
-    seqan::getArgumentValue(options.out_file, parser, 1);
+    seqan::getArgumentValue(options.genome_file, parser, 1);
     getOptionValue(options.fold_length, parser, "max-length");
 
     return seqan::ArgumentParser::PARSE_OK;
@@ -231,7 +231,7 @@ int main(int argc, char const ** argv)
 				  << "PSEUDOKNOTS\t" << options.pseudoknot << '\n'
 				  << "MAX LENGTH\t" << options.fold_length << '\n'
 				  << "RNA      \t" << options.rna_file << '\n'
-                  << "OUTPUT   \t" << options.out_file << "\n\n";
+                  << "TARGET   \t" << options.genome_file << "\n\n";
     }
 
     std::vector<seqan::StockholmRecord<seqan::Rna>> records;
@@ -302,14 +302,12 @@ int main(int argc, char const ** argv)
 			free(constraint_bracket);
 	}
 
-	// possible refactor this into separate program
-
-    seqan::CharString seqFileName = "/home/benni/Dokumente/Dropbox/Abschlussarbeit/Masterarbeit/data/Rfam_bench.fa";
+	// possibly refactor this into separate program
 
     seqan::StringSet<seqan::CharString> ids;
     seqan::StringSet<seqan::Rna5String> seqs;
 
-    seqan::SeqFileIn seqFileIn(toCString(seqFileName));
+    seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
     readRecords(ids, seqs, seqFileIn);
 
 	typedef seqan::FMIndexConfig<void, unsigned> TConfig;
