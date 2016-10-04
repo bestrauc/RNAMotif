@@ -35,6 +35,7 @@
 #ifndef APPS_RNAMOTIF_MOTIF_H_
 #define APPS_RNAMOTIF_MOTIF_H_
 
+#include <seqan/index.h>
 #include "motif_structures.h"
 #include <stack>
 
@@ -341,6 +342,58 @@ void structurePartition(Motif &motif){
 		// find structural elements
 		partitionStemLoop(motif, btype, region);
 	}
+
+	return;
+}
+
+template <typename TBidirectionalIndex>
+std::vector<std::pair<int, int> > findMotif(TBidirectionalIndex &index, TStemLoopProfile &profile){
+	std::vector<std::pair<int, int> > result;
+
+	seqan::Finder<TBidirectionalIndex> finder(index);
+
+	int id = 0;
+
+	for (TStructure &structure : profile){
+		int start_pos = 0;
+		// progress linearly through the structure elements and search for them
+
+		// we go linearly from hairpin to the bounding stem
+		for (StructureElement &element : structure){
+			if 		(element.type == HAIRPIN){
+
+			}
+			else if (element.type == LOOP){
+
+			}
+			else if (element.type == STEM){
+
+			}
+		}
+
+		result.push_back(std::make_pair(id, start_pos));
+		++id;
+	}
+
+	return result;
+}
+
+template <typename TStringType>
+std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringType> &seqs, std::vector<Motif> &motifs){
+	std::vector<seqan::Tuple<int, 3> > results;
+
+	typedef seqan::FMIndexConfig<void, unsigned> TConfig;
+	typedef seqan::FMIndex<void, TConfig> TFMIndex;
+	typedef seqan::Index<seqan::StringSet<TStringType>, TFMIndex > TBiDirIndex;
+	TBiDirIndex index(seqs);
+	//seqan::indexRequire(index, seqan::FibreSA());
+
+    for (Motif &motif : motifs){
+    	// find the locations of the motif matches
+    	std::vector<std::pair<int, int> > result = findMotif(index, motif.profile);
+
+		// verify that they lie close enough
+    }
 
 	return;
 }

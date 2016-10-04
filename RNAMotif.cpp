@@ -53,9 +53,6 @@
 #include "stockholm_file.h"
 #include "stockholm_io.h"
 
-
-#include <seqan/index.h>
-
 // -----------
 
 #ifdef _WIN32
@@ -310,13 +307,7 @@ int main(int argc, char const ** argv)
     seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
     readRecords(ids, seqs, seqFileIn);
 
-	typedef seqan::FMIndexConfig<void, unsigned> TConfig;
-	typedef seqan::FMIndex<void, TConfig> TFMIndex;
-	typedef seqan::Index<seqan::StringSet<seqan::Rna5String>, TFMIndex > TBiDirIndex;
-	TBiDirIndex index(seqs);
-	seqan::indexRequire(index, seqan::FibreSA());
 
-    seqan::Finder<TBiDirIndex> indexFinder(index);
 
 	std::cout << std::endl;
 
