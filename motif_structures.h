@@ -88,7 +88,7 @@ struct InteractionGraph {
 };
 
 typedef seqan::String<seqan::ProfileChar<seqan::Rna> > RNAProfileString;
-typedef enum {HAIRPIN, STEM, LOOP} StructureType;
+typedef enum {HAIRPIN = 1, STEM = 2, LBULGE = 4, RBULGE = 8, LOOP = 12} StructureType;
 
 struct StructureStatistics{
 	unsigned min_length;
@@ -100,12 +100,13 @@ struct StructureStatistics{
 // Stem, Internal Loop, Hairpin Loop
 struct StructureElement{
 	StructureType type;
+	typedef RNAProfileString TProfileString;
 
 	// for HAIRPIN: just one string
 	// for STEM   : two strings (left and right side of the stem)
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
-	std::vector<RNAProfileString> components;
+	std::vector<TProfileString> components;
 
 	// length of the sequence that makes up the structure
 	// the variation in length comes due to gaps in the alignment

@@ -293,6 +293,16 @@ int main(int argc, char const ** argv)
 
 		structurePartition(rna_motif);
 
+		//StructureElement::TProfileString test = rna_motif.profile[0][0].components[0];
+
+
+		/*
+		for (auto bla : test){
+			for (int k = 0; k < seqan::ValueSize<seqan::ProfileChar<seqan::Rna> >::VALUE; ++k){
+				std::cout << seqan::Rna(k) << " " << bla.count[k] << "\n";
+			}
+		}*/
+
 		motifs[k] = rna_motif;
 
 		if (options.constrain)
@@ -307,7 +317,7 @@ int main(int argc, char const ** argv)
     seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
     readRecords(ids, seqs, seqFileIn);
 
-
+    findFamilyMatches(seqs, motifs);
 
 	std::cout << std::endl;
 
