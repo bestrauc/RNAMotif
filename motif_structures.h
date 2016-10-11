@@ -37,8 +37,14 @@
 
 // SeqAn headers
 #include <seqan/align.h>
-#include <unordered_map>
+#include <seqan/index.h>
 #include "stockholm_file.h"
+
+// C++ headers
+#include <unordered_map>
+#include <stack>
+#include <numeric>
+#include <memory>
 
 #ifndef NDEBUG
 #define DEBUG_MSG(str) do { std::cout << str << std::endl; } while( false )
@@ -53,6 +59,35 @@
 // ============================================================================
 // Tags, Classes, Enums
 // ============================================================================
+
+/* Various types related to secondary structure */
+
+typedef enum {ROUND = 0, SQUARE, CURLY, ANGLE, MAX} BracketType;
+
+typedef enum {HAIRPIN = 1, STEM = 2, LBULGE = 4, RBULGE = 8, LOOP = 12} StructureType;
+
+const std::string parentheses("{}[]()<>");
+
+std::unordered_map<char, BracketType> bracket_to_type =
+	{
+	 {'(', ROUND},  {')', ROUND},
+	 {'[', SQUARE}, {']', SQUARE},
+	 {'{', CURLY},  {'}', CURLY},
+	 {'<', ANGLE},  {'>', ANGLE}
+	};
+
+std::unordered_map<char, char> match_table =
+	{
+	 {')', '('}, {'>', '<'},
+	 {']', '['}, {'}', '{'}
+	};
+
+/* Various functions related to brackets and bases */
+
+bool isOpen(char c){
+	return (c == '(') || (c == '[') || (c == '{') || (c == '<');
+}
+
 
 // Types for the alignment
 typedef seqan::String<seqan::Rna> TSequence;
@@ -87,8 +122,18 @@ struct InteractionGraph {
 	TUgraph graph; // this graph represents all the computed interaction edges
 };
 
-typedef seqan::String<seqan::ProfileChar<seqan::Rna> > RNAProfileString;
-typedef enum {HAIRPIN = 1, STEM = 2, LBULGE = 4, RBULGE = 8, LOOP = 12} StructureType;
+// From the Alphabet used (Dna, Rna), define a Binucleotide Alphabet and Profile strings.
+// Binucleotide alphabet: // AA, AC, AG, AT
+typedef seqan::Rna TAlphabet;
+
+const seqan::ValueSize<TAlphabet>::Type AlphabetSize = seqan::ValueSize<TAlphabet>::VALUE;
+typedef seqan::SimpleType<unsigned char, seqan::Finite<AlphabetSize*AlphabetSize> > TBiAlphabet;
+
+typedef seqan::ProfileChar<TAlphabet> TAlphabetProfile;
+typedef seqan::ProfileChar<TBiAlphabet> TBiAlphabetProfile;
+
+typedef seqan::String<seqan::ProfileChar<TAlphabet> > TLoopProfileString;
+typedef seqan::String<seqan::ProfileChar<TBiAlphabet> > TStemProfileString;
 
 struct StructureStatistics{
 	unsigned min_length;
@@ -96,38 +141,23 @@ struct StructureStatistics{
 	double  mean_length;
 };
 
+
 // Describes a type of secondary structure
 // Stem, Internal Loop, Hairpin Loop
 struct StructureElement{
 	StructureType type;
-	typedef RNAProfileString TProfileString;
 
 	// for HAIRPIN: just one string
 	// for STEM   : two strings (left and right side of the stem)
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
-	std::vector<TProfileString> components;
+	std::vector<TLoopProfileString> loopComponents;
+	TStemProfileString stemProfile;
 
 	// length of the sequence that makes up the structure
 	// the variation in length comes due to gaps in the alignment
 	std::vector<StructureStatistics> statistics;
 };
-
-std::unordered_map<char, char> match_table =
-	{
-	 {')', '('}, {'>', '<'},
-	 {']', '['}, {'}', '{'}
-	};
-
-typedef enum {ROUND = 0, SQUARE, CURLY, ANGLE, MAX} BracketType;
-
-std::unordered_map<char, BracketType> bracket_to_type =
-	{
-	 {'(', ROUND},  {')', ROUND},
-	 {'[', SQUARE}, {']', SQUARE},
-	 {'{', CURLY},  {'}', CURLY},
-	 {'<', ANGLE},  {'>', ANGLE}
-	};
 
 typedef std::vector<std::pair<BracketType, int> > TInteractionPairs;
 typedef std::pair<int, int> TRegion;
@@ -152,6 +182,228 @@ struct Motif{
 
 	// the profiles for the individual stem loops
 	TStemLoopProfile profile;
+};
+
+/* ------------------------------------------------------- */
+/*!
+ * @class ProfileCharIter
+ *
+ * @brief Abstract base class of the ProfileChar iterator.
+ *
+ *	Allows us to use different subclass iterators for different ProfileChar
+ *	Alphabet types while searching. (Mainly for Nucleotides and BiNucleotides)
+ */
+
+class ProfileCharIter{
+public:
+	virtual int getNextChar() = 0;
+	virtual bool atEnd() = 0;
+	virtual ~ProfileCharIter() {};
+};
+
+/*!
+ * @class ProfileCharIterImpl
+ *
+ * @brief Implement the ProfileCharIter for all types of ProfileChars.
+ *
+ *	Templated implementation for ProfileChar types of different alphabets.
+ *	Return the next characters as for all as int for consistency.
+ */
+
+template <typename TProfileChar>
+class ProfileCharIterImpl : public ProfileCharIter{
+	typedef typename seqan::SourceValue<TProfileChar>::Type TProfileAlphabet;
+	TProfileChar c;
+	const int char_size = seqan::ValueSize<TProfileChar>::VALUE;
+
+	int state = 0;
+	std::vector<int> idx;
+	int total;
+
+public:
+	ProfileCharIterImpl (TProfileChar c) : c(c), idx(char_size), total(seqan::totalCount(c)){
+		// fill index vector with indies [0,1,..,N-1]
+		std::iota(idx.begin(), idx.end(), 0);
+		// sort index by comparing the entries in tmp to get order
+		std::sort(idx.begin(), idx.end(),
+			[&] (int i1, int i2) {
+				return (c.count[i1] > c.count[i2]);
+			}
+		);
+	}
+
+	int getNextChar(){
+		if (atEnd())
+			return -1;
+		return TProfileAlphabet(idx[state++]);
+	}
+
+	bool atEnd(){
+		return (state == char_size);
+	}
+};
+
+/* ------------------------------------------------------- */
+
+template <typename TBidirectionalIndex>
+class MotifIterator{
+	typedef typename seqan::Iterator<TBidirectionalIndex, seqan::TopDown<seqan::ParentLinks<> > >::Type TIterator;
+	typedef typename seqan::SAValue<TBidirectionalIndex>::Type THitPair;
+	typedef seqan::String< THitPair > TOccurenceString;
+
+	typedef std::shared_ptr<ProfileCharIter> ProfilePointer;
+
+	// Search state to keep track of the left/right borders of the extension.
+	// In the case of stems, only one object, the Binucleotide iterator.
+	std::stack<ProfilePointer> leftState;
+	std::stack<ProfilePointer> rightState;
+	TStructure structure;
+	TIterator it;
+	int active_element;
+	int l, r;
+
+	// threshold: stop expanding when below this likelihood for the sequence
+	int min_match;
+	bool cont = true;
+
+	bool setEnd(){
+		return (cont = false);
+	}
+
+public:
+	MotifIterator(TStructure &structure, TBidirectionalIndex &index, double min_match = 8)
+		: structure(structure), it(index),active_element(structure.size()-1), min_match(min_match){
+		// push center elements of hairpin onto the stack
+		StructureElement &hairpinElement = structure.back();
+		auto &hairpin = hairpinElement.loopComponents[0];
+		int n = seqan::length(hairpin);
+		l = n/2-1;
+		r = n/2;
+
+		auto left_char  = hairpin[n/2-1];
+		auto right_char = hairpin[n/2+1];
+
+		ProfilePointer left(new ProfileCharIterImpl<TAlphabetProfile>(left_char));
+		ProfilePointer right(new ProfileCharIterImpl<TAlphabetProfile>(right_char));
+
+		leftState.push(left);
+		rightState.push(right);
+	}
+
+	// next() returns true as long as the motif is not exhausted.
+	// Only 'valid' matches are iterated: exclude those who do not match
+	// or do not represent the family well (prob. below threshold)
+	bool next(){
+		if (!cont)
+			return false;
+
+		// restore state from last call of next
+		ProfilePointer left = leftState.top();
+		ProfilePointer right = rightState.top();
+
+		bool loopCondition = true;
+
+		// loop until a new match is found and save the state
+		// In each iteration, extend one step.
+		// When no further extension possible, check if long enough.
+
+		do {
+			StructureType stype = structure[active_element].type;
+			bool lReady = false, rReady = false;
+			int n = seqan::length(structure[active_element].loopComponents[0]);
+			loopCondition = false;
+
+			//
+			if (stype == HAIRPIN){
+				// try extending to the left
+
+				if (!lReady){
+					// what is next char to the left?
+					int lchar = left->getNextChar();
+
+					// if all characters exhausted, backtrack and try again
+					if (lchar == -1){
+						++l;
+						leftState.pop();
+						if (leftState.empty())
+							return setEnd();
+
+						left = leftState.top();
+						continue;
+					}
+
+					// if match extended, move to next profile column
+					if (loopCondition |= seqan::goDown(it, lchar, seqan::Rev())){
+						lReady = (l == 0);
+						if (!lReady){
+							auto next_char = structure[active_element].loopComponents[0][--l];
+							ProfilePointer next_ptr(new ProfileCharIterImpl<TAlphabetProfile>(next_char));
+							leftState.push(next_ptr);
+							left = next_ptr;
+						}
+					}
+				}
+
+				if (!rReady){
+					// what is next char to the right?
+					int rchar = right->getNextChar();
+
+					// if all characters exhausted, backtrack and try again
+					if (rchar == -1){
+						--r;
+						rightState.pop();
+						if (rightState.empty())
+							return setEnd();
+
+						right = rightState.top();
+						continue;
+					}
+
+					// if match extended, move to next profile column
+					if (loopCondition |= seqan::goDown(it, rchar, seqan::Fwd())){
+						rReady = (r == n-1);
+						if (!rReady){
+							auto next_char = structure[active_element].loopComponents[1][++r];
+							ProfilePointer next_ptr(new ProfileCharIterImpl<TAlphabetProfile>(next_char));
+							rightState.push(next_ptr);
+							right = next_ptr;
+						}
+					};
+				}
+
+				// if the hairpin reached the end, move state to stem and set indices
+				if (lReady && rReady){
+					--active_element;
+					l = seqan::length(structure[active_element].stemProfile)-1;
+					r = l;
+					auto next_char = structure[active_element].stemProfile[l];
+					ProfilePointer next_ptr(new ProfileCharIterImpl<TBiAlphabetProfile>(next_char));
+					leftState.push(next_ptr);
+				}
+			}
+			else if (stype & STEM){
+				int stem_char = left->getNextChar();
+			}
+		} while(loopCondition);
+
+		// return false if the motif is exhausted, else true
+
+		return true;
+	}
+
+	TOccurenceString getOccurrences(){
+		// FIXME: getting occurrences directly via
+		// occs = seqan::getOccurrences(it) doesn't work for some reason
+		TOccurenceString occs;
+		for (THitPair test: seqan::getOccurrences(it))
+			seqan::appendValue(occs, test);
+
+		return occs;
+	}
+
+	unsigned countOccurrences(){
+		return seqan::countOccurrences(it);
+	}
 };
 
 // ============================================================================

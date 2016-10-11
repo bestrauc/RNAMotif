@@ -35,9 +35,8 @@
 #ifndef APPS_RNAMOTIF_MOTIF_H_
 #define APPS_RNAMOTIF_MOTIF_H_
 
-#include <seqan/index.h>
+
 #include "motif_structures.h"
-#include <stack>
 
 // ============================================================================
 // Forwards
@@ -55,11 +54,6 @@
 // Functions
 // ============================================================================
 
-bool isOpen(char c){
-	return (c == '(') || (c == '[') || (c == '{') || (c == '<');
-}
-
-const std::string parentheses("{}[]()<>");
 
 // helper function to generate interaction vectors via bracket notation
 void bracketToInteractions(const char* structure, TInteractionPairs& interaction){
@@ -106,12 +100,11 @@ void bracketToInteractions(const char* structure, TInteractionPairs& interaction
 	}
 }
 
-template <typename TProfileString>
-TProfileString addRNAProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align){
+TLoopProfileString addProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align){
 	typedef seqan::Row<TAlign>::Type TRow;
-	typedef typename seqan::Value<TProfileString>::Type TProfileChar;
+	typedef typename seqan::Value<TLoopProfileString>::Type TProfileChar;
 
-	TProfileString profileString;
+	TLoopProfileString profileString;
 	seqan::resize(profileString, end-start+1);
 	StructureStatistics stats;
 
@@ -157,8 +150,37 @@ TProfileString addRNAProfile(StructureElement &structureElement, unsigned start,
 	if (structureElement.type == StructureType::HAIRPIN && stats.min_length < 3)
 		stats.min_length = 3;
 
-	structureElement.components.push_back(profileString);
+	structureElement.loopComponents.push_back(profileString);
 	structureElement.statistics.push_back(stats);
+
+	return profileString;
+}
+
+TStemProfileString addProfile(StructureElement &structureElement, unsigned start1, unsigned end1, unsigned start2, unsigned end2, TAlign &align){
+
+	typedef typename seqan::Value<TStemProfileString>::Type TProfileChar;
+
+	TStemProfileString profileString;
+	seqan::resize(profileString, end1-start1+1);
+
+	// store the profile of the alignment in [start,end]
+	for (unsigned row=0; row < length(rows(align)); ++row){
+		// create binucleotide profile of bases in the two columns
+		for (unsigned i=0; i < seqan::length(profileString); ++i){
+			int l_index = i+start1; // left stem
+			int r_index = end2-i;	// right stem
+
+			unsigned l_ord_val = seqan::ordValue(seqan::row(align, row)[l_index]);
+			unsigned r_ord_val = seqan::ordValue(seqan::row(align, row)[r_index]);
+			unsigned pair_val = l_ord_val*AlphabetSize + r_ord_val;
+
+			// if there's no gap in one of the pairs, count TODO: how to handle gaps?
+			if (pair_val < seqan::ValueSize<TProfileChar>::VALUE)
+				profileString[i].count[pair_val] += 1;
+		}
+	}
+
+	structureElement.stemProfile = profileString;
 
 	return profileString;
 }
@@ -250,8 +272,9 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 					DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]");
 
 					stem.type = STEM;
-					RNAProfileString leftProfile  = addRNAProfile<RNAProfileString>(stem, i, pos-1, motif.seedAlignment);
-					RNAProfileString rightProfile = addRNAProfile<RNAProfileString>(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, motif.seedAlignment);
+					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
 
 					// find the extension of the right bulge and add it
 					// there is one run of unpaired bases from right+1
@@ -263,7 +286,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 					StructureElement bulge;
 
 					bulge.type = RBULGE;
-					RNAProfileString bulgeProfile = addRNAProfile<RNAProfileString>(bulge, unpaired+1, right-1, motif.seedAlignment);
+					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, motif.seedAlignment);
 					stemStructure.push_back(bulge);
 
 					i = pos;
@@ -279,8 +302,9 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 			DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]");
 
 			stem.type = STEM;
-			RNAProfileString leftProfile  = addRNAProfile<RNAProfileString>(stem, i, pos-1, motif.seedAlignment);
-			RNAProfileString rightProfile = addRNAProfile<RNAProfileString>(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, motif.seedAlignment);
+			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
 
 			stemStructure.push_back(stem);
 		}
@@ -301,22 +325,22 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 				DEBUG_MSG("Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = LBULGE;
-				RNAProfileString bulgeProfile = addRNAProfile<RNAProfileString>(structure, pos, run-1, motif.seedAlignment);
+				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, motif.seedAlignment);
 			}
 			// Hairpin (stop the outer loop here since all structures found)
 			else if (rb == run){
 				DEBUG_MSG("Hairpin in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = HAIRPIN;
-				RNAProfileString hairpinProfile = addRNAProfile<RNAProfileString>(structure, pos, run-1, motif.seedAlignment);
+				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, motif.seedAlignment);
 			}
 			// Interior loop with left and right side
 			else{
 				DEBUG_MSG("Left loop: [" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: [" << lb+1 << "," << rb-1 << " " << rb-1-lb << "]");
 
 				structure.type = LOOP;
-				RNAProfileString leftProfile  = addRNAProfile<RNAProfileString>(structure, pos, run-1, motif.seedAlignment);
-				RNAProfileString rightProfile = addRNAProfile<RNAProfileString>(structure, lb+1, rb-1, motif.seedAlignment);
+				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, motif.seedAlignment);
+				TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, motif.seedAlignment);
 			}
 
 			stemStructure.push_back(structure);
@@ -355,88 +379,26 @@ void structurePartition(Motif &motif){
 }
 
 template <typename TBidirectionalIndex>
-std::vector<std::pair<int, int> > findMotif(TBidirectionalIndex &index, TStemLoopProfile &profile){
-	std::vector<std::pair<int, int> > result;
+std::vector<seqan::String< typename seqan::SAValue<TBidirectionalIndex>::Type > > findMotif(TBidirectionalIndex &index, TStemLoopProfile &profile){
+	typedef typename seqan::SAValue<TBidirectionalIndex>::Type THitPair;
+	typedef seqan::String< THitPair > TOccurenceString;
+
+	std::vector<TOccurenceString> result(profile.size());
 
 	int id = 0;
 
 	for (TStructure &structure : profile){
-		int start_pos = 0;
+		//typename seqan::Iterator<TBidirectionalIndex, seqan::TopDown<> >::Type it(index);
+		//typedef seqan::Value<TLoopProfileString>::Type TProfileChar;
 
-		typename seqan::Iterator<TBidirectionalIndex, seqan::TopDown<> >::Type it(index);
-		typedef StructureElement::TProfileString TProfile;
-		typedef seqan::Value<TProfile>::Type TProfileChar;
+		MotifIterator<TBidirectionalIndex> iter(structure, index, 0);
 
-		// progress linearly through the structure elements and search for them
-
-		// we go linearly from hairpin to the bounding stem
-		for (StructureElement &element : structure){
-			//std::cout << element.type << "\n";
-			if 		(element.type == HAIRPIN){
-				// a hairpin just has the one component
-				TProfile & hairpin = element.components[0];
-				StructureStatistics &stats = element.statistics[0];
-
-				int len = seqan::length(hairpin);
-				int i = len/2 - 1;
-				int j = len/2;
-
-				while (i >= 0 || j < len){
-					//std::cout << i << " " << j << "\n";
-					// search one step to the left
-					if (i >= 0){
-						// get the most likely base
-						unsigned max_char = seqan::getMaxIndex(hairpin[i]);
-						//if (max_char != '-')
-						if (!seqan::goDown(it, max_char, seqan::Rev()))
-							i = 0;
-
-						--i;
-					}
-
-					// search one step to the right
-					if (j < len){
-						// most likely base
-						unsigned max_char = seqan::getMaxIndex(hairpin[j]);
-						//if (max_char != '-')
-						if (!seqan::goDown(it, max_char, seqan::Fwd()))
-							j = len-1;
-
-						++j;
-					}
-				}
-			}
-			else if (element.type & LOOP){
-				// match the loop to the left (left loop part or bulge)
-				if (element.type & LBULGE)
-					StructureStatistics &lstats = element.statistics[0];
-					TProfile & left  = element.components[0];
-
-				// match the loop to the right (right loop part or bulge)
-				if (element.type & RBULGE)
-					StructureStatistics &rstats = element.statistics[1];
-					TProfile & right = element.components[1];
-
-			}
-			else if (element.type == STEM){
-				StructureStatistics &lstats = element.statistics[0];
-				StructureStatistics &rstats = element.statistics[1];
-				TProfile & left  = element.components[0];
-				TProfile & right = element.components[1];
-
-				// match the stem left and right (they have to pair up)
-
-			}
+		while (iter.next()){
+			std::cout << id << "\n";
+			TOccurenceString occs = iter.getOccurrences();
+			std::cout << id << " : " << seqan::length(occs) << "\n";
+			seqan::append(result[id], occs);
 		}
-
-		std::cout << id << " : " << countOccurrences(it) << "\n";
-
-		//for (unsigned k = 0; k < countOccurrences(it); ++k)
-		//		std::cout << getOccurrences(it)[k] << ", ";
-		//std::cout << "\n";
-
-		//seqan::String<typename seqan::SAValue<TBidirectionalIndex>::Type> occs = seqan::getOccurrences(it);
-		result.push_back(std::make_pair(id, start_pos));
 		++id;
 	}
 
@@ -449,14 +411,14 @@ std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringTyp
 
 	//typedef seqan::FMIndexConfig<void, unsigned> TConfig;
 	//typedef seqan::FMIndex<void, TConfig> TFMIndex;
-	typedef seqan::Index<seqan::StringSet<TStringType>, seqan::BidirectionalIndex<seqan::FMIndex< > > >  TBiDirIndex;
-	TBiDirIndex index(seqs);
+	typedef seqan::Index<seqan::StringSet<TStringType>, seqan::BidirectionalIndex<seqan::FMIndex< > > >  TBidirectionalIndex;
+	TBidirectionalIndex index(seqs);
 	//seqan::indexRequire(index, seqan::FibreSA());
 
     for (Motif &motif : motifs){
     	// find the locations of the motif matches
     	//std::cout << motif.header.at("AC") << "\n";
-    	std::vector<std::pair<int, int> > result = findMotif(index, motif.profile);
+    	std::vector<seqan::String< typename seqan::SAValue<TBidirectionalIndex>::Type > > result = findMotif(index, motif.profile);
 
 		// verify that they lie close enough
     }
