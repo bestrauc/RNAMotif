@@ -394,7 +394,6 @@ std::vector<seqan::String< typename seqan::SAValue<TBidirectionalIndex>::Type > 
 		MotifIterator<TBidirectionalIndex> iter(structure, index, 0);
 
 		while (iter.next()){
-			std::cout << id << "\n";
 			TOccurenceString occs = iter.getOccurrences();
 			std::cout << id << " : " << seqan::length(occs) << "\n";
 			seqan::append(result[id], occs);
