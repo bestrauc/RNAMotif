@@ -231,6 +231,35 @@ int main(int argc, char const ** argv)
                   << "TARGET   \t" << options.genome_file << "\n\n";
     }
 
+    /*
+    seqan::CharString tmpstr("IMISSMISSISSIPPI");
+
+    seqan::Index<seqan::CharString, seqan::BidirectionalIndex<seqan::FMIndex< > > > tindex(tmpstr);
+    typedef typename seqan::Iterator<seqan::Index<seqan::CharString, seqan::BidirectionalIndex<seqan::FMIndex< > > >, seqan::TopDown<seqan::ParentLinks<> > >::Type TIterator;
+
+    TIterator itera(tindex);
+
+    std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
+
+    seqan::goDown(itera, "I", seqan::Rev());
+    std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
+
+    seqan::goDown(itera, "M", seqan::Fwd());
+	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
+
+	seqan::goDown(itera, "S", seqan::Rev());
+	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
+
+	seqan::goUp(itera);
+	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
+
+	seqan::goUp(itera);
+	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
+
+
+    return 0;
+    */
+
     std::vector<seqan::StockholmRecord<seqan::Rna>> records;
 
     uint64_t start = GetTimeMs64();

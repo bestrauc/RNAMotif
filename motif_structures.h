@@ -196,6 +196,8 @@ struct Motif{
 
 class ProfileCharIter{
 public:
+	bool inner = false;
+
 	virtual int getNextChar() = 0;
 	virtual bool atEnd() = 0;
 	virtual ~ProfileCharIter() {};
@@ -238,8 +240,9 @@ public:
 		return TProfileAlphabet(idx[state++]);
 	}
 
+	// end if all chars that occurred were returned
 	bool atEnd(){
-		return (state == char_size);
+		return ((state == char_size) || (c.count[idx[state]] == 0));
 	}
 };
 
@@ -262,7 +265,6 @@ class MotifIterator{
 	TIterator it;
 	int active_element;
 	bool cont = true;
-	bool search_limit = false;
 
 	// structure for reference
 
@@ -281,7 +283,7 @@ public:
 		StructureElement &hairpinElement = structure.back();
 		auto &hairpin = hairpinElement.loopComponents[0];
 		pos = 0;
-		ProfilePointer posPointer(new ProfileCharIterImpl<TAlphabetProfile>(pos));
+		ProfilePointer posPointer(new ProfileCharIterImpl<TAlphabetProfile>(hairpin[pos]));
 		state.push(posPointer);
 
 		//l = n/2-1;
@@ -305,21 +307,26 @@ public:
 			return false;
 
 		// restore state from last call of next
+		StructureType stype = structure[active_element].type;
 		ProfilePointer statePointer = state.top();
 
-		bool loopCondition = true;
+		// the iterator still points to the previous match, backtrack from that
+		seqan::goUp(it);
+		// for stem pairs, need to backtrack right too
+		if (stype == STEM)	seqan::goUp(it);
 
 		// loop until a new match is found and save the state
 		// In each iteration, extend one step.
 		// When no further extension possible, check if long enough.
 
 		do {
-			StructureType stype = structure[active_element].type;
+			stype = structure[active_element].type;
 			int n = seqan::length(structure[active_element].loopComponents[0]);
 
 			if (stype == HAIRPIN){
 				// extend to the right from pos 0
 				int next_char = statePointer->getNextChar();
+				//std::cout << "(" << next_char << "," << pos << ") ";
 
 				// if chars exhausted, backtrack
 				if (next_char == -1){
@@ -331,40 +338,38 @@ public:
 					}
 
 					// reset iterator and get previous state
-					seqan::goUp(it);
-					statePointer = state.top();
-
-					continue;
+					if (statePointer->inner){
+						seqan::goUp(it);
+						statePointer = state.top();
+						continue;
+					}
+					else
+						break;
 				}
 
 				// advance to the next character
-				if ( (loopCondition = goDown(it, next_char, seqan::Fwd() )) ){
-					++pos;
+				if (goDown(it, next_char, seqan::Rev())){
+					statePointer->inner = true;
 					// if we exit the hairpin, go to stem
-					int next_char;
-					if (pos == n){
+					if (pos == n-1){
+						//break;
 						--active_element;
-						pos = seqan::length(structure[active_element])-1;
-						next_char = structure[active_element].stemProfile[pos];
+						pos = seqan::length(structure[active_element].loopComponents[0])-1;
+						auto next_char = structure[active_element].stemProfile[pos];
+						ProfilePointer posPointer(new ProfileCharIterImpl<TBiAlphabetProfile>(next_char));
+						state.push(posPointer);
+						statePointer = posPointer;
 					}
-					else
-						next_char = structure[active_element].loopComponents[0][pos];
-
-					ProfilePointer posPointer(new ProfileCharIterImpl<TAlphabetProfile>(next_char));
-					state.push(posPointer);
-					statePointer = posPointer;
+					else{
+						++pos;
+						auto next_char = structure[active_element].loopComponents[0][pos];
+						ProfilePointer posPointer(new ProfileCharIterImpl<TAlphabetProfile>(next_char));
+						state.push(posPointer);
+						statePointer = posPointer;
+					}
 				}
-
-
 			}
-			else if (stype & STEM){
-				// if we are at the end of the stem, set iterator back left and right
-				if (search_limit){
-					seqan::goUp(it);
-					seqan::goUp(it);
-					search_limit = false;
-				}
-
+			else if (stype == STEM){
 				int stem_char = statePointer->getNextChar();
 
 				// backtrack if this stem char is exhausted
@@ -372,30 +377,42 @@ public:
 				if (stem_char == -1){
 					++pos;
 					state.pop();
-					statePointer = state.top();
 
 					// if backtracked back into the hairpin, change active element
+					// and report the match ending at the last hairpin element
 					if (pos == n){
 						++active_element;
-						pos = n-1;
+						pos = seqan::length(structure[active_element].loopComponents[0])-1;
+						break;
 					}
 
-					continue;
+					// if it's an inner node, simply backtrack
+					// (a match was found in the children)
+					if (statePointer->inner){
+						seqan::goUp(it);
+						seqan::goUp(it);
+						statePointer = state.top();
+						continue;
+					} // else break to report a match up to this position
+					else{
+						break;
+					}
 				}
 
 				// partition stem char into its components
-				int lchar = stem_char >> AlphabetSize;
-				int rchar = stem_char & AlphabetSize;
+				int lchar = stem_char >> seqan::BitsPerValue<TAlphabet>::VALUE;
+				int rchar = stem_char & (AlphabetSize-1);
 
 				// needs to extend into both directions:
-				bool wentLeft  = seqan::goDown(it, lchar, seqan::Rev());
-				bool wentRight = seqan::goDown(it, rchar, seqan::Fwd());
+				bool wentLeft  = seqan::goDown(it, lchar, seqan::Fwd());
+				bool wentRight = seqan::goDown(it, rchar, seqan::Rev());
 
-				// if we went both left and right
-				if ( (loopCondition = (wentLeft && wentRight)) ){
+				// if we went both left and right, go to next stem pair
+				if (wentLeft && wentRight){
+					// end of first stem, stop searching
+					statePointer->inner = true;
 					if (pos == 0){
-						loopCondition = false;
-						search_limit = true;
+						break;
 					}
 					else{
 						--pos;
@@ -405,21 +422,23 @@ public:
 						statePointer = next_ptr;
 					}
 				}
-				//
+				// if we only successfully went into one direction, reset this one
 				else if (wentLeft || wentRight){
 					seqan::goUp(it);
 				}
 			}
-		} while(loopCondition);
+		} while(true);
 
 		// if match too short, start next again
 		if (seqan::repLength(it) < min_match)
 			return this->next();
 
 		if (active_element == seqan::length(structure)-1)
-			std::cout << "Endpoint: " << pos << " " << seqan::repLength(it) << "\n";
-		else
-			std::cout << "Endpoint: " << seqan::length(structure.back().loopComponents[0])-1 + pos << " " << seqan::repLength(it) << "\n";
+			std::cout << "EndpointH: " << pos << " " << seqan::representative(it) << " " <<  seqan::repLength(it) << "\n";
+		else{
+			int ll = seqan::length(structure[active_element].loopComponents[0]);
+			std::cout << "EndpointS: " << seqan::length(structure.back().loopComponents[0])-1 + (ll-pos) << " " << seqan::representative(it) << " " << seqan::repLength(it) << "\n";
+		}
 
 		return true;
 	}
@@ -448,71 +467,3 @@ public:
 // ============================================================================
 
 #endif  // #ifndef APPS_RNAMOTIF_MOTIF_STRUCTURES_H_
-
-/*
-if (!lEnd){
-					// what is next char to the left?
-					int lchar = left->getNextChar();
-
-					// if all characters exhausted, backtrack and try again
-					// (backtrack: go to previous char, adjust index and rewind iterator)
-					if (lchar == -1){
-						++l;
-						leftState.pop();
-						if (leftState.empty())
-							return setEnd();
-
-						left = leftState.top();
-						continue;
-					}
-
-					// if match extended, move to next profile column
-					if (loopCondition |= seqan::goDown(it, lchar, seqan::Rev())){
-						lEnd = (l == 0);
-						if (!lEnd){
-							auto next_char = structure[active_element].loopComponents[0][--l];
-							ProfilePointer next_ptr(new ProfileCharIterImpl<TAlphabetProfile>(next_char));
-							leftState.push(next_ptr);
-							left = next_ptr;
-						}
-					}
-				}
-
-				if (!rEnd){
-					// what is next char to the right?
-					int rchar = right->getNextChar();
-
-					// if all characters exhausted, backtrack and try again
-					// (backtrack: go to previous char, adjust index and rewind iterator)
-					if (rchar == -1){
-						--r;
-						rightState.pop();
-						if (rightState.empty())
-							return setEnd();
-
-						right = rightState.top();
-						continue;
-					}
-
-					// if match extended, move to next profile column
-					if (loopCondition |= seqan::goDown(it, rchar, seqan::Fwd())){
-						rEnd = (r == n-1);
-						if (!rEnd){
-							auto next_char = structure[active_element].loopComponents[0][++r];
-							ProfilePointer next_ptr(new ProfileCharIterImpl<TAlphabetProfile>(next_char));
-							rightState.push(next_ptr);
-							right = next_ptr;
-						}
-					};
-				}
-
-				// if the hairpin reached the end, move state to stem and set indices
-				if (lEnd && rEnd){
-					--active_element;
-					l = seqan::length(structure[active_element].stemProfile)-1;
-					r = l;
-					auto next_char = structure[active_element].stemProfile[l];
-					ProfilePointer next_ptr(new ProfileCharIterImpl<TBiAlphabetProfile>(next_char));
-					leftState.push(next_ptr);
-					left = next_ptr;
-				}*/

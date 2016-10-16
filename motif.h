@@ -174,6 +174,8 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 			unsigned r_ord_val = seqan::ordValue(seqan::row(align, row)[r_index]);
 			unsigned pair_val = l_ord_val*AlphabetSize + r_ord_val;
 
+			//std::cout << l_ord_val << " " << r_ord_val << " " << pair_val << " " << (pair_val >> seqan::BitsPerValue<TAlphabet>::VALUE) << " " << (pair_val & (AlphabetSize-1)) << "\n";
+
 			// if there's no gap in one of the pairs, count TODO: how to handle gaps?
 			if (pair_val < seqan::ValueSize<TProfileChar>::VALUE)
 				profileString[i].count[pair_val] += 1;
@@ -333,6 +335,12 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 
 				structure.type = HAIRPIN;
 				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, motif.seedAlignment);
+				//for (auto c : structure.loopComponents[0])
+				//{
+				//	for (auto v : c.count)
+				//		std::cout << v << " ";
+				//	std::cout << "\n";
+				//}
 			}
 			// Interior loop with left and right side
 			else{
@@ -395,9 +403,11 @@ std::vector<seqan::String< typename seqan::SAValue<TBidirectionalIndex>::Type > 
 
 		while (iter.next()){
 			TOccurenceString occs = iter.getOccurrences();
-			std::cout << id << " : " << seqan::length(occs) << "\n";
+			//std::cout << id << " : " << seqan::length(occs) << "\n";
 			seqan::append(result[id], occs);
 		}
+
+		std::cout << seqan::length(result[id]) << "\n";
 		++id;
 	}
 
