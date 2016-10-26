@@ -38,6 +38,8 @@
 // SeqAn headers
 #include <seqan/align.h>
 #include <seqan/index.h>
+#include <seqan/misc/interval_tree.h>
+
 #include "stockholm_file.h"
 
 // C++ headers
@@ -59,6 +61,180 @@
 // ============================================================================
 // Tags, Classes, Enums
 // ============================================================================
+
+namespace seqan {
+
+// specialize seqan's Interval tree 'findIntervals' function to enable it to
+// return IntervalAndCargo to include boundaries of the overlapping intervals
+template <typename TValue, typename TCargo, typename TValue2>
+inline void
+findIntervals(
+        String<IntervalAndCargo<TValue, TCargo> > & result,
+        IntervalTree<TValue, TCargo> const & it,
+        TValue2 query)
+{
+    findIntervals(result, it.g, it.pm, query);
+}
+
+template <typename TSpec, typename TPropertyMap, typename TValue, typename TCargo, typename TValue2>
+inline void
+findIntervals(
+        String< IntervalAndCargo<TValue, TCargo> > & result,
+        Graph<TSpec> const & g,
+        TPropertyMap const & pm,
+		TValue2 query)
+{
+    typedef Graph<TSpec> const TGraph;
+    typedef typename VertexDescriptor<TGraph>::Type TVertexDescriptor;
+    typedef typename Value<TPropertyMap>::Type TProperty;
+    typedef typename Value<TProperty>::Type TPropertyValue;
+    typedef typename Iterator<TGraph, OutEdgeIterator>::Type TOutEdgeIterator;
+
+    resize(result, 0);
+    if (empty(g))
+        return;
+
+    // start at root
+    TVertexDescriptor act_knot = 0;
+    TProperty act_prop = property(pm, act_knot);
+    TProperty next_prop;
+
+    while (true)
+    {
+        //typename Iterator<Graph<TSpec>, OutEdgeIterator>::Type it7;
+        //Iter<Graph<TSpec>, GraphIterator<InternalOutEdgeIterator<OutEdgeIterator> > > it5(g, act_knot);
+        //TOutEdgeIterator it4;
+        TOutEdgeIterator it(g, act_knot);
+        act_prop = property(pm, act_knot);
+        if (act_prop.center < (TPropertyValue)query) // look in current node and right subtree
+        {
+            unsigned int i = 0;
+            while (i<length(act_prop.list2) && rightBoundary(value(act_prop.list2, i))>(TPropertyValue) query)
+            {
+            	auto &val = value(act_prop.list2, i);
+            	IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
+                appendValue(result, tmp, Generous());
+                ++i;
+            }
+            if (atEnd(it))
+                break;
+
+            next_prop = property(pm, targetVertex(it));
+            if (next_prop.center <= act_prop.center)
+            {
+                goNext(it);
+                if (atEnd(it))
+                    break;
+            }
+            act_knot = targetVertex(it);
+        }
+        else
+        {
+            if ((TPropertyValue)query < act_prop.center) // look in current node and left subtree
+            {
+                unsigned int i = 0;
+                while (i < length(act_prop.list1) && leftBoundary(value(act_prop.list1, i)) <= (TPropertyValue)query)
+                {
+                	auto &val = value(act_prop.list1, i);
+					IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
+					appendValue(result, tmp, Generous());
+                    ++i;
+                }
+                if (atEnd(it))
+                    break;
+
+                next_prop = property(pm, targetVertex(it));
+                if (next_prop.center >= act_prop.center)
+                {
+                    goNext(it);
+                    if (atEnd(it))
+                        break;
+                }
+                act_knot = targetVertex(it);
+            }
+            else  // look in current node only, as query is center
+            {
+                for (unsigned int i = 0; i < length(act_prop.list1); ++i){
+                	auto &val = value(act_prop.list1, i);
+					IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
+					appendValue(result, tmp, Generous());
+                }
+                break;
+            }
+        }
+    }
+}
+
+// do an inorder traversal of the tree and report all intervals
+template <typename TValue, typename TCargo>
+inline void
+getAllIntervals(
+        String<IntervalAndCargo<TValue, TCargo> > & result,
+		IntervalTree<TValue, TCargo, StoreIntervals> const & it)
+{
+	getAllIntervals(result, it.g, it.pm);
+}
+
+template <typename TSpec, typename TPropertyMap, typename TValue, typename TCargo>
+inline void
+getAllIntervals(
+        String<IntervalAndCargo<TValue, TCargo> > & result,
+        Graph<TSpec> const & g,
+        TPropertyMap const & pm)
+{
+    typedef Graph<TSpec> const TGraph;
+    typedef typename VertexDescriptor<TGraph>::Type TVertexDescriptor;
+
+	resize(result, 0);
+	// start at root
+	TVertexDescriptor act_knot = 0;
+	getAllIntervals(result, g, pm, act_knot);
+}
+
+template <typename TSpec, typename TPropertyMap, typename TValue, typename TCargo, typename TVertexDescriptor>
+inline void
+getAllIntervals(
+        String< IntervalAndCargo<TValue, TCargo> > & result,
+        Graph<TSpec> const & g,
+        TPropertyMap const & pm,
+		TVertexDescriptor & act_knot)
+{
+	typedef Graph<TSpec> const TGraph;
+	typedef typename Value<TPropertyMap>::Type TProperty;
+	//typedef typename Value<TProperty>::Type TPropertyValue;
+	typedef typename Iterator<TGraph, OutEdgeIterator>::Type TOutEdgeIterator;
+
+	if (empty(g))
+		return;
+
+	TProperty act_prop = property(pm, act_knot);
+	TProperty next_prop;
+
+	TOutEdgeIterator it(g, act_knot);
+
+	// go left
+	if (!atEnd(it)){
+		TVertexDescriptor next_knot = targetVertex(it);
+		getAllIntervals(result, g, pm, next_knot);
+		goNext(it);
+	}
+
+	// append center list
+	for (unsigned int i = 0; i < length(act_prop.list1); ++i){
+		auto &val = value(act_prop.list1, i);
+		IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
+		appendValue(result, tmp, Generous());
+	}
+
+	// go right
+	if (!atEnd(it))
+	{
+		TVertexDescriptor next_knot = targetVertex(it);
+		getAllIntervals(result, g, pm, next_knot);
+	}
+}
+
+}
 
 /* Various types related to secondary structure */
 
@@ -88,9 +264,10 @@ bool isOpen(char c){
 	return (c == '(') || (c == '[') || (c == '{') || (c == '<');
 }
 
+typedef seqan::Rna5 TBaseAlphabet;
 
 // Types for the alignment
-typedef seqan::String<seqan::Rna> TSequence;
+typedef seqan::String<TBaseAlphabet> TSequence;
 typedef seqan::StringSet<TSequence> TStringSet;
 typedef seqan::StringSet<TSequence, seqan::Dependent<> > TDepStringSet;
 typedef seqan::Graph<seqan::Alignment<TDepStringSet, void, seqan::WithoutEdgeId> > TAlignGraph;
@@ -124,9 +301,15 @@ struct InteractionGraph {
 
 // From the Alphabet used (Dna, Rna), define a Binucleotide Alphabet and Profile strings.
 // Binucleotide alphabet: // AA, AC, AG, AT
-typedef seqan::Rna TAlphabet;
+// Add one field to store gap characters.
+typedef seqan::Index<seqan::StringSet<seqan::String<TBaseAlphabet> >, seqan::BidirectionalIndex<seqan::FMIndex< > > >  TBidirectionalIndex;
+typedef typename seqan::SAValue<TBidirectionalIndex>::Type TIndexPosType;
+
+// Base Alphabet + gap character for profiles
+typedef seqan::SimpleType<unsigned char, seqan::Finite<seqan::ValueSize<TBaseAlphabet>::VALUE+1> > TAlphabet;
 
 const seqan::ValueSize<TAlphabet>::Type AlphabetSize = seqan::ValueSize<TAlphabet>::VALUE;
+const seqan::BitsPerValue<TAlphabet>::Type AlphabetBitSize = seqan::BitsPerValue<TAlphabet>::VALUE;
 typedef seqan::SimpleType<unsigned char, seqan::Finite<AlphabetSize*AlphabetSize> > TBiAlphabet;
 
 typedef seqan::ProfileChar<TAlphabet> TAlphabetProfile;
@@ -134,6 +317,9 @@ typedef seqan::ProfileChar<TBiAlphabet> TBiAlphabetProfile;
 
 typedef seqan::String<seqan::ProfileChar<TAlphabet> > TLoopProfileString;
 typedef seqan::String<seqan::ProfileChar<TBiAlphabet> > TStemProfileString;
+
+typedef seqan::IntervalAndCargo<long unsigned int, std::shared_ptr<std::vector<bool> > > TProfileCargo;
+typedef seqan::IntervalTree<long unsigned int, std::shared_ptr<std::vector<bool> >, seqan::StoreIntervals> TProfileInterval;
 
 struct StructureStatistics{
 	unsigned min_length;
@@ -146,6 +332,7 @@ struct StructureStatistics{
 // Stem, Internal Loop, Hairpin Loop
 struct StructureElement{
 	StructureType type;
+	int location;
 
 	// for HAIRPIN: just one string
 	// for STEM   : two strings (left and right side of the stem)
@@ -196,7 +383,8 @@ struct Motif{
 
 class ProfileCharIter{
 public:
-	bool inner = false;
+	bool inner  = false;
+	bool gapped = false;
 
 	virtual int getNextChar() = 0;
 	virtual bool atEnd() = 0;
@@ -258,6 +446,7 @@ class MotifIterator{
 
 	// Search state to keep track of the left/right borders of the extension.
 	// In the case of stems, only one object, the Binucleotide iterator.
+	int id;
 	std::stack<ProfilePointer> state;
 	int l, r;
 	int pos;
@@ -277,8 +466,8 @@ class MotifIterator{
 	}
 
 public:
-	MotifIterator(TStructure &structure, TBidirectionalIndex &index, double min_match = 11)
-		: structure(structure), it(index),active_element(structure.size()-1), min_match(min_match){
+	MotifIterator(TStructure &structure, TBidirectionalIndex &index, double min_match, int id)
+		: id(id), structure(structure), it(index),active_element(structure.size()-1), min_match(min_match){
 		// push center elements of hairpin onto the stack
 		StructureElement &hairpinElement = structure.back();
 		auto &hairpin = hairpinElement.loopComponents[0];
@@ -311,9 +500,11 @@ public:
 		ProfilePointer statePointer = state.top();
 
 		// the iterator still points to the previous match, backtrack from that
-		seqan::goUp(it);
-		// for stem pairs, need to backtrack right too
-		if (stype == STEM)	seqan::goUp(it);
+		if (!statePointer->gapped){
+			seqan::goUp(it);
+			// for stem pairs, need to backtrack right too
+			if (stype == STEM)	seqan::goUp(it);
+		}
 
 		// loop until a new match is found and save the state
 		// In each iteration, extend one step.
@@ -324,8 +515,18 @@ public:
 			int n = seqan::length(structure[active_element].loopComponents[0]);
 
 			if (stype == HAIRPIN){
+				std::cout << this->id << ": " << seqan::representative(it) << "\n";
+
 				// extend to the right from pos 0
 				int next_char = statePointer->getNextChar();
+
+				// skip gap characters
+				//if (next_char == (AlphabetSize-1))
+				//	next_char = statePointer->getNextChar();
+
+				//std::cout << next_char << " " << TBaseAlphabet(next_char) << "\n";
+
+				statePointer->gapped = (next_char == AlphabetSize-1);
 				//std::cout << "(" << next_char << "," << pos << ") ";
 
 				// if chars exhausted, backtrack
@@ -337,22 +538,28 @@ public:
 						return setEnd();
 					}
 
-					// reset iterator and get previous state
+					// reset iterator (if we didn't come from a gap) and get previous state
 					if (statePointer->inner){
-						seqan::goUp(it);
 						statePointer = state.top();
+
+						// only non-gap characters advanced the iterator
+						// only goUp if the character wasn't a gap
+						if (!statePointer->gapped)
+							seqan::goUp(it);
+
 						continue;
 					}
 					else
 						break;
 				}
 
-				// advance to the next character
-				if (goDown(it, next_char, seqan::Rev())){
+				// advance to the next character if we have a gap or match
+				if (statePointer->gapped || goDown(it, next_char, seqan::Rev())){
 					statePointer->inner = true;
+
 					// if we exit the hairpin, go to stem
 					if (pos == n-1){
-						//break;
+						break;
 						--active_element;
 						pos = seqan::length(structure[active_element].loopComponents[0])-1;
 						auto next_char = structure[active_element].stemProfile[pos];
@@ -399,9 +606,12 @@ public:
 					}
 				}
 
-				// partition stem char into its components
-				int lchar = stem_char >> seqan::BitsPerValue<TAlphabet>::VALUE;
-				int rchar = stem_char & (AlphabetSize-1);
+				// partition stem char into components (using / and % instead
+				// of bit shifting since AlphabetSize might not be power of 2)
+				int lchar = stem_char / AlphabetSize;
+				int rchar = stem_char % AlphabetSize;
+
+				//std::cout << TBaseAlphabet(lchar) << " " << TBaseAlphabet(rchar) << " " << stem_char << "\n";
 
 				// needs to extend into both directions:
 				bool wentLeft  = seqan::goDown(it, lchar, seqan::Fwd());
@@ -433,12 +643,13 @@ public:
 		if (seqan::repLength(it) < min_match)
 			return this->next();
 
+		/*
 		if (active_element == seqan::length(structure)-1)
 			std::cout << "EndpointH: " << pos << " " << seqan::representative(it) << " " <<  seqan::repLength(it) << "\n";
 		else{
 			int ll = seqan::length(structure[active_element].loopComponents[0]);
 			std::cout << "EndpointS: " << seqan::length(structure.back().loopComponents[0])-1 + (ll-pos) << " " << seqan::representative(it) << " " << seqan::repLength(it) << "\n";
-		}
+		}*/
 
 		return true;
 	}

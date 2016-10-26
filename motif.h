@@ -139,8 +139,12 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 			int index = i+start;
 			//std::cout << "(" << seqan::ordValue(seqan::row(align, row)[index]) << "," << seqan::row(align, row)[index] << ")" << " ";
 			unsigned ord_val = seqan::ordValue(seqan::row(align, row)[index]);
-			if (ord_val < seqan::ValueSize<TProfileChar>::VALUE)
-				profileString[i].count[ord_val] += 1;
+
+			// save gaps as last character in alphabet
+			if (ord_val > seqan::ValueSize<TProfileChar>::VALUE)
+				ord_val = AlphabetSize-1;
+
+			profileString[i].count[ord_val] += 1;
 		}
 		//std::cout << std::endl;
 	}
@@ -172,13 +176,19 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 
 			unsigned l_ord_val = seqan::ordValue(seqan::row(align, row)[l_index]);
 			unsigned r_ord_val = seqan::ordValue(seqan::row(align, row)[r_index]);
-			unsigned pair_val = l_ord_val*AlphabetSize + r_ord_val;
 
-			//std::cout << l_ord_val << " " << r_ord_val << " " << pair_val << " " << (pair_val >> seqan::BitsPerValue<TAlphabet>::VALUE) << " " << (pair_val & (AlphabetSize-1)) << "\n";
+			// if neither characeter is a gap
+			if (l_ord_val < AlphabetSize && r_ord_val < AlphabetSize){
+				unsigned pair_val = (l_ord_val*AlphabetSize) + r_ord_val;
 
-			// if there's no gap in one of the pairs, count TODO: how to handle gaps?
-			if (pair_val < seqan::ValueSize<TProfileChar>::VALUE)
+				//std::cout << pair_val << "\n";
+
+				//std::cout << l_ord_val << " " << r_ord_val << " " << pair_val << " " <<  (pair_val >> seqan::BitsPerValue<TAlphabet>::VALUE) << " " << (pair_val & (AlphabetSize-1)) << "\n";
+
+				// if there's no gap in one of the pairs, count TODO: how to handle gaps?
+				//std::cout << (int)AlphabetBitSize << " " << (1 << 2*AlphabetBitSize) << " - " << pair_val << " " << seqan::ValueSize<TProfileChar>::VALUE << "\n";
 				profileString[i].count[pair_val] += 1;
+			}
 		}
 	}
 
@@ -274,9 +284,12 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 					DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]");
 
 					stem.type = STEM;
+					stem.location = i;
 					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, motif.seedAlignment);
 					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
 					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+
+					stemStructure.push_back(stem);
 
 					// find the extension of the right bulge and add it
 					// there is one run of unpaired bases from right+1
@@ -288,6 +301,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 					StructureElement bulge;
 
 					bulge.type = RBULGE;
+					bulge.location = unpaired+1;
 					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, motif.seedAlignment);
 					stemStructure.push_back(bulge);
 
@@ -304,6 +318,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 			DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1].second << "," << consensus[i].second << " " << consensus[i].second - consensus[pos-1].second+1 << "]");
 
 			stem.type = STEM;
+			stem.location = i;
 			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, motif.seedAlignment);
 			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
 			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
@@ -335,12 +350,6 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 
 				structure.type = HAIRPIN;
 				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, motif.seedAlignment);
-				//for (auto c : structure.loopComponents[0])
-				//{
-				//	for (auto v : c.count)
-				//		std::cout << v << " ";
-				//	std::cout << "\n";
-				//}
 			}
 			// Interior loop with left and right side
 			else{
@@ -351,6 +360,7 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 				TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, motif.seedAlignment);
 			}
 
+			structure.location = pos;
 			stemStructure.push_back(structure);
 
 			if (structure.type == HAIRPIN)
@@ -387,49 +397,94 @@ void structurePartition(Motif &motif){
 }
 
 template <typename TBidirectionalIndex>
-std::vector<seqan::String< typename seqan::SAValue<TBidirectionalIndex>::Type > > findMotif(TBidirectionalIndex &index, TStemLoopProfile &profile){
-	typedef typename seqan::SAValue<TBidirectionalIndex>::Type THitPair;
-	typedef seqan::String< THitPair > TOccurenceString;
+std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif &motif){
+	//typedef typename seqan::SAValue<TBidirectionalIndex>::Type THitPair;
+	typedef seqan::String< TIndexPosType > TOccurenceString;
 
-	std::vector<TOccurenceString> result(profile.size());
+	//std::vector<TOccurenceString> result(profile.size());
+
+	// create one interval tree for each contig in the reference genome
+	std::vector<TProfileInterval> intervals(seqan::countSequences(index));
 
 	int id = 0;
+	int n = motif.consensusStructure.size();
+	int stems = motif.profile.size();
 
-	for (TStructure &structure : profile){
-		//typename seqan::Iterator<TBidirectionalIndex, seqan::TopDown<> >::Type it(index);
-		//typedef seqan::Value<TLoopProfileString>::Type TProfileChar;
+	for (TStructure &structure : motif.profile){
+		// start of the hairpin in the whole sequence
+		int loc = motif.profile[id].back().location;
 
-		MotifIterator<TBidirectionalIndex> iter(structure, index, 0);
+		MotifIterator<TBidirectionalIndex> iter(structure, index, 11, id);
 
 		while (iter.next()){
 			TOccurenceString occs = iter.getOccurrences();
-			//std::cout << id << " : " << seqan::length(occs) << "\n";
-			seqan::append(result[id], occs);
+
+			for (TIndexPosType pos : occs){
+				TProfileInterval &interval = intervals[pos.i1];
+
+				seqan::String<TProfileCargo> hits;
+
+				// check if the stem occurs in an already existing match region
+				findIntervals(hits, interval, pos.i2);
+
+				// if this stem isn't located in an existing match region
+				if (seqan::length(hits) == 0){
+					//std::cout << loc << " " << n << " " << pos.i2 << " " << pos.i2-loc << " " << pos.i2 + (n-loc) << "\n";
+
+					std::shared_ptr<std::vector<bool> > stemSet(new std::vector<bool>(stems));
+					(*stemSet)[id] = true;
+					// add an interval around the matched stem
+					seqan::addInterval(interval, pos.i2-loc, pos.i2+(n-loc), stemSet);
+				}
+				// else add to the list of hits
+				else{
+					for (unsigned i=0; i < seqan::length(hits); ++i){
+						(*hits[i].cargo)[id] = true;
+					}
+				}
+			}
+			//std::cout << "\n";
+
 		}
 
-		std::cout << seqan::length(result[id]) << "\n";
+		for (unsigned i=0; i < seqan::countSequences(index); ++i)
+			std::cout << "After " << id << "," << i << ": " << intervals[i].interval_counter << "\n";
+
+		//std::cout << seqan::length(result[id]) << "\n";
+		//seqan::sort(result[id]);
 		++id;
 	}
 
-	return result;
+	return intervals;
 }
+
+void countHits(TProfileInterval positions, int window_size){
+	seqan::String<TProfileCargo> hits;
+	seqan::getAllIntervals(hits, positions);
+
+	for (unsigned i=0; i < seqan::length(hits); ++i)
+		// only report hits where all stems occurred in the region
+		if (std::all_of(hits[i].cargo->begin(), hits[i].cargo->end(), [](bool v) { return v; }))
+			std::cout << hits[i].i1 << " " << hits[i].i2 << "\n";
+}
+
 
 template <typename TStringType>
 std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringType> &seqs, std::vector<Motif> &motifs){
 	std::vector<seqan::Tuple<int, 3> > results;
 
-	//typedef seqan::FMIndexConfig<void, unsigned> TConfig;
-	//typedef seqan::FMIndex<void, TConfig> TFMIndex;
-	typedef seqan::Index<seqan::StringSet<TStringType>, seqan::BidirectionalIndex<seqan::FMIndex< > > >  TBidirectionalIndex;
 	TBidirectionalIndex index(seqs);
-	//seqan::indexRequire(index, seqan::FibreSA());
 
     for (Motif &motif : motifs){
     	// find the locations of the motif matches
     	//std::cout << motif.header.at("AC") << "\n";
-    	std::vector<seqan::String< typename seqan::SAValue<TBidirectionalIndex>::Type > > result = findMotif(index, motif.profile);
+    	std::vector<TProfileInterval> result = getStemloopPositions(index, motif);
 
-		// verify that they lie close enough
+		// cluster results into areas (i.e. where hairpins of a given type cluster together)
+    	std::cout << result[1].interval_counter << "\n";
+    	//countHits(result[1], motif.consensusStructure.size());
+    	//for (TProfileInterval intervals : result)
+    		//countHits(intervals, motif.consensusStructure.size());
     }
 
 	return results;
