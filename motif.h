@@ -37,6 +37,7 @@
 
 
 #include "motif_structures.h"
+#include "motif_search.h"
 
 // ============================================================================
 // Forwards
@@ -394,100 +395,6 @@ void structurePartition(Motif &motif){
 	}
 
 	return;
-}
-
-template <typename TBidirectionalIndex>
-std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif &motif){
-	//typedef typename seqan::SAValue<TBidirectionalIndex>::Type THitPair;
-	typedef seqan::String< TIndexPosType > TOccurenceString;
-
-	//std::vector<TOccurenceString> result(profile.size());
-
-	// create one interval tree for each contig in the reference genome
-	std::vector<TProfileInterval> intervals(seqan::countSequences(index));
-
-	int id = 0;
-	int n = motif.consensusStructure.size();
-	int stems = motif.profile.size();
-
-	for (TStructure &structure : motif.profile){
-		// start of the hairpin in the whole sequence
-		int loc = motif.profile[id].back().location;
-
-		MotifIterator<TBidirectionalIndex> iter(structure, index, 11, id);
-
-		while (iter.next()){
-			TOccurenceString occs = iter.getOccurrences();
-
-			for (TIndexPosType pos : occs){
-				TProfileInterval &interval = intervals[pos.i1];
-
-				seqan::String<TProfileCargo> hits;
-
-				// check if the stem occurs in an already existing match region
-				findIntervals(hits, interval, pos.i2);
-
-				// if this stem isn't located in an existing match region
-				if (seqan::length(hits) == 0){
-					//std::cout << loc << " " << n << " " << pos.i2 << " " << pos.i2-loc << " " << pos.i2 + (n-loc) << "\n";
-
-					std::shared_ptr<std::vector<bool> > stemSet(new std::vector<bool>(stems));
-					(*stemSet)[id] = true;
-					// add an interval around the matched stem
-					seqan::addInterval(interval, pos.i2-loc, pos.i2+(n-loc), stemSet);
-				}
-				// else add to the list of hits
-				else{
-					for (unsigned i=0; i < seqan::length(hits); ++i){
-						(*hits[i].cargo)[id] = true;
-					}
-				}
-			}
-			//std::cout << "\n";
-
-		}
-
-		for (unsigned i=0; i < seqan::countSequences(index); ++i)
-			std::cout << "After " << id << "," << i << ": " << intervals[i].interval_counter << "\n";
-
-		//std::cout << seqan::length(result[id]) << "\n";
-		//seqan::sort(result[id]);
-		++id;
-	}
-
-	return intervals;
-}
-
-void countHits(TProfileInterval positions, int window_size){
-	seqan::String<TProfileCargo> hits;
-	seqan::getAllIntervals(hits, positions);
-
-	for (unsigned i=0; i < seqan::length(hits); ++i)
-		// only report hits where all stems occurred in the region
-		if (std::all_of(hits[i].cargo->begin(), hits[i].cargo->end(), [](bool v) { return v; }))
-			std::cout << hits[i].i1 << " " << hits[i].i2 << "\n";
-}
-
-
-template <typename TStringType>
-std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringType> &seqs, std::vector<Motif> &motifs){
-	std::vector<seqan::Tuple<int, 3> > results;
-
-	TBidirectionalIndex index(seqs);
-
-    for (Motif &motif : motifs){
-    	// find the locations of the motif matches
-    	//std::cout << motif.header.at("AC") << "\n";
-    	std::vector<TProfileInterval> result = getStemloopPositions(index, motif);
-
-		// cluster results into areas (i.e. where hairpins of a given type cluster together)
-    	std::cout << result[1].interval_counter << "\n";
-    	//countHits(result[1], motif.consensusStructure.size());
-    	//for (TProfileInterval intervals : result)
-    		//countHits(intervals, motif.consensusStructure.size());
-    }
-
-	return results;
 }
 
 #endif  // #ifndef APPS_RNAMOTIF_MOTIF_H_
