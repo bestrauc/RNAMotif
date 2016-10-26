@@ -260,7 +260,7 @@ int main(int argc, char const ** argv)
     return 0;
     */
 
-    std::vector<seqan::StockholmRecord<seqan::Rna>> records;
+    std::vector<seqan::StockholmRecord<TBaseAlphabet> > records;
 
     uint64_t start = GetTimeMs64();
 
@@ -268,7 +268,7 @@ int main(int argc, char const ** argv)
     seqan::open(stockFileIn, seqan::toCString(options.rna_file));
 
     while (!seqan::atEnd(stockFileIn)){
-    	seqan::StockholmRecord<seqan::Rna> record;
+    	seqan::StockholmRecord<TBaseAlphabet> record;
 		seqan::readRecord(record, stockFileIn);
 		records.push_back(record);
     }
@@ -280,7 +280,7 @@ int main(int argc, char const ** argv)
 
 	#pragma omp parallel for schedule(dynamic,4)
 	for (size_t k=0; k < records.size(); ++k){
-		seqan::StockholmRecord<seqan::Rna> const &record = records[k];
+		seqan::StockholmRecord<TBaseAlphabet> const &record = records[k];
 
 
 		std::cout << record.header.at("AC") << " : " << record.header.at("ID") << "\n";
@@ -314,7 +314,8 @@ int main(int argc, char const ** argv)
 		}
 
 		// create structure for the whole multiple alignment
-		DEBUG_MSG("Rfam:   " << record.seqence_information.at("SS_cons"));
+		std::cout << "Rfam:   " << record.seqence_information.at("SS_cons") << "\n";
+		//DEBUG_MSG("Rfam:   " << record.seqence_information.at("SS_cons"));
 		if (options.pseudoknot)
 			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
 		else
@@ -341,7 +342,7 @@ int main(int argc, char const ** argv)
 	// possibly refactor this into separate program
 
     seqan::StringSet<seqan::CharString> ids;
-    seqan::StringSet<seqan::Rna5String> seqs;
+    seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
 
     seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
     readRecords(ids, seqs, seqFileIn);

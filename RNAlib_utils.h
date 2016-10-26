@@ -163,7 +163,7 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(seqan::StockholmRecord<seqan::Rna> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const &){
+void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const &){
    	char** seqs = new char*[record.seqences.size()+1];
    	seqs[record.seqences.size()] = 0;
 
@@ -189,8 +189,10 @@ void getConsensusStructure(seqan::StockholmRecord<seqan::Rna> const & record, TI
 	vrna_mfe(vc, structure);
 	vrna_pf(vc, prob_structure);
 
-	DEBUG_MSG("Vienna: " << structure);
-	DEBUG_MSG("        " << consens_mis((const char**)seqs));
+	std::cout << "Vienna: " << structure << "\n";
+	std::cout << "        " << consens_mis((const char**)seqs) << "\n";
+	//DEBUG_MSG("Vienna: " << structure);
+	//DEBUG_MSG("        " << consens_mis((const char**)seqs));
 
 	structureToInteractions(structure, consensusStructure);
 
