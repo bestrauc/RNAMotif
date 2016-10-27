@@ -37,10 +37,11 @@ set (NUPACK_SOURCES ipknot/nupack/nupack.h ipknot/nupack/nupack.cpp ipknot/nupac
 set (IPKNOT_SOURCES ipknot/config.h ipknot/aln.h ipknot/aln.cpp ipknot/fold.h ipknot/fold.cpp ipknot/ip.h ipknot/ip.cpp ${CONTRA_SOURCES} ${NUPACK_SOURCES})
 
 # Update the list of file names below if you add source files to your application.
-add_executable (RNAMotif RNAMotif.cpp motif.h motif_structures.h stockholm_file.h stockholm_io.h RNAlib_utils.h IPknot_utils.h ${IPKNOT_SOURCES})
+add_executable (RNAMotif RNAMotif.cpp motif.h motif_structures.h motif_search.h stockholm_file.h stockholm_io.h RNAlib_utils.h IPknot_utils.h ${IPKNOT_SOURCES})
 
 # Add dependencies found by find_package (SeqAn).
-target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/lib/x86_64-linux-gnu/libRNA.a" glpk gmp)
+#target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/lib/x86_64-linux-gnu/libRNA.a" glpk gmp)
+target_link_libraries (RNAMotif ${SEQAN_LIBRARIES} "/usr/local/lib/libRNA.a" glpk gmp)
 
 # Add CXX flags found by find_package (SeqAn).
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
