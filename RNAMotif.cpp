@@ -231,34 +231,6 @@ int main(int argc, char const ** argv)
                   << "TARGET   \t" << options.genome_file << "\n\n";
     }
 
-    /*
-    seqan::CharString tmpstr("IMISSMISSISSIPPI");
-
-    seqan::Index<seqan::CharString, seqan::BidirectionalIndex<seqan::FMIndex< > > > tindex(tmpstr);
-    typedef typename seqan::Iterator<seqan::Index<seqan::CharString, seqan::BidirectionalIndex<seqan::FMIndex< > > >, seqan::TopDown<seqan::ParentLinks<> > >::Type TIterator;
-
-    TIterator itera(tindex);
-
-    std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
-
-    seqan::goDown(itera, "I", seqan::Rev());
-    std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
-
-    seqan::goDown(itera, "M", seqan::Fwd());
-	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
-
-	seqan::goDown(itera, "S", seqan::Rev());
-	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
-
-	seqan::goUp(itera);
-	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
-
-	seqan::goUp(itera);
-	std::cout << seqan::countOccurrences(itera) << " " << seqan::representative(itera) << "\n";
-
-
-    return 0;
-    */
 
     std::vector<seqan::StockholmRecord<TBaseAlphabet> > records;
 
@@ -276,9 +248,32 @@ int main(int argc, char const ** argv)
     std::cout << records.size() << " records read\n";
     std::cout << "Time: " << GetTimeMs64() - start << "ms \n";
 
+    /*
+    for (auto record: records){
+    	std::string name = record.header.at("AC");
+    	seqan::SeqFileOut fileOut((name+std::string("_") + record.header.at("ID") + std::string(".fasta")).c_str());
+
+    	std::cout << (name+std::string("_") + record.header.at("ID") + std::string(".fasta")) << "\n";
+
+    	typedef seqan::StringSetType<TAlign>::Type TAlignString;
+
+    	TAlignString strSet = seqan::stringSet(record.alignment);
+
+    	for (int i=0; i < seqan::length(strSet); ++i){
+    		seqan::writeRecord(fileOut, record.sequence_names[i], value(strSet,i));
+    		//std::cout << seqan::value(strSet, i) <<"\n";
+    	}
+
+    	seqan::close(fileOut);
+
+    	//for (unsigned row=0; row < length(rows(record.alignment)); ++row){
+
+    }
+    return 0; */
+
 	std::vector<Motif> motifs(records.size());
 
-	#pragma omp parallel for schedule(dynamic,4)
+	//#pragma omp parallel for schedule(dynamic,4)
 	for (size_t k=0; k < records.size(); ++k){
 		seqan::StockholmRecord<TBaseAlphabet> const &record = records[k];
 
@@ -321,6 +316,8 @@ int main(int argc, char const ** argv)
 		else
 			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, RNALibFold());
 
+		std::cout << "\n";
+
 		structurePartition(rna_motif);
 
 		//StructureElement::TProfileString test = rna_motif.profile[0][0].components[0];
@@ -341,15 +338,15 @@ int main(int argc, char const ** argv)
 
 	// possibly refactor this into separate program
 
-    seqan::StringSet<seqan::CharString> ids;
-    seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
+    //seqan::StringSet<seqan::CharString> ids;
+	//seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
 
-    seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
-    readRecords(ids, seqs, seqFileIn);
+	//seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
+	//readRecords(ids, seqs, seqFileIn);
 
-    findFamilyMatches(seqs, motifs);
+	//findFamilyMatches(seqs, motifs);
 
-	std::cout << std::endl;
+	//std::cout << std::endl;
 
     return 0;
 }

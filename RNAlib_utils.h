@@ -51,6 +51,8 @@ extern "C"{
 	#include  <ViennaRNA/constraints.h>
 	#include  <ViennaRNA/PS_dot.h>
 	#include  <ViennaRNA/aln_util.h>
+	#include  <ViennaRNA/subopt.h>
+	#include  <ViennaRNA/2Dpfold.h>
 }
 
 // ============================================================================
@@ -164,8 +166,9 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 }
 
 void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const &){
-   	char** seqs = new char*[record.seqences.size()+1];
-   	seqs[record.seqences.size()] = 0;
+	int n_seq = record.seqences.size();
+   	char** seqs = new char*[n_seq+1];
+   	seqs[n_seq] = 0;
 
    	int i = 0;
 	for (auto elem : record.seqences)
@@ -176,9 +179,16 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 		++i;
 	}
 
-	char *structure  	 = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
-	char *prob_structure = (char*)vrna_alloc(sizeof(char) * (strlen(seqs[0]) + 1));
-	vrna_fold_compound_t *vc 	= vrna_fold_compound_comparative((const char**)seqs, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+	vrna_init_rand();
+	int length = strlen(seqs[0]);
+
+	char *structure  	 = (char*)vrna_alloc(sizeof(char) * (length + 1));
+	char *prob_structure = (char*)vrna_alloc(sizeof(char) * (length + 1));
+
+	vrna_md_t md;
+	vrna_md_set_default(&md);
+	md.uniq_ML = 1;
+	vrna_fold_compound_t *vc 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 	// add constraints if available
 	if (constraint){
@@ -186,26 +196,64 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 		std::cout << "bracket:" << constraint << std::endl;
 	}
 
-	vrna_mfe(vc, structure);
-	vrna_pf(vc, prob_structure);
+	double min_en = vrna_mfe(vc, structure);
 
-	std::cout << "Vienna: " << structure << "\n";
+	float energy, kT;
+	float betaScale = 1.;
+
+	kT = (betaScale*((temperature+K0)*GASCONST))/1000.; /* in Kcal */
+
+    energy = vrna_pf(vc, prob_structure);
+
+    std::unordered_map<double, bool> seenStructures;
+
+	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << vrna_mean_bp_distance(vc) << "\n";
 	std::cout << "        " << consens_mis((const char**)seqs) << "\n";
+//	std::cout << "Weird:  " << prob_structure << "\n";
+
+
+	std::cout << "Alternatives: \n";
+	for (i=0; i<15; i++) {
+		char *s;
+		double prob=1.;
+		s = vrna_pbacktrack(vc);
+		//s = vrna_(vc);
+
+		double e  = (double)vrna_eval_structure(vc, s);
+		e -= (double)vrna_eval_covar_structure(vc, s);
+		prob = exp((energy - e)/kT);
+
+		if (!seenStructures[prob]){
+			printf("        %s ", s);
+			printf("%6g %.2f  ",prob, -1*(kT*log(prob)-energy));
+			printf("\n");
+
+			seenStructures[prob] = true;
+		}
+		else
+			--i;
+
+		free(s);
+    }
+
+
+
 	//DEBUG_MSG("Vienna: " << structure);
 	//DEBUG_MSG("        " << consens_mis((const char**)seqs));
 
 	structureToInteractions(structure, consensusStructure);
 
-	/* TODO: Unbalanced brackets seem to appear?
+	/* TODO: Unbalanced brackets seem to appear? */
 	vrna_plist_t *pl1, *pl2;
 	// get dot plot structures
-	pl1 = vrna_plist_from_probs(vc, 0);
-	pl2 = vrna_plist(prob_structure, 0.95*0.95);
+	pl1 = vrna_plist_from_probs(vc, 0.005);
+	pl2 = vrna_plist(structure, 0.95*0.95);
 
 	// write dot-plot
 	//	Function used to plot the dot_plot graph
-	(void) PS_dot_plot_list((char*)seqs[0], "prova_dot_plot.ps", pl1, pl1, "");
-	*/
+	//(void) PS_dot_plot_list((char*)seqs[0], (record.header.at("AC") + std::string(".ps")).c_str(), pl1, pl1, "");
+	char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
+	(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
 
 	// free all used RNAlib data structures
 	free(structure);
