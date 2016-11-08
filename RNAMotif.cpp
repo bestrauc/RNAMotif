@@ -301,12 +301,15 @@ int main(int argc, char const ** argv)
 		rna_motif.interactionPairs.resize(record.seqences.size());
 
 		// build interaction graphs for each sequence
+		// TODO: Probably not even needed here.
+		/*
 		int i = 0;
 		for (auto elem : record.seqences)
 		{
-			//createInteractions(rna_motif.interactionGraphs[i], rna_motif.interactionPairs[i], elem.second, constraint_bracket);
+			createInteractions(rna_motif.interactionGraphs[i], rna_motif.interactionPairs[i], elem.second, constraint_bracket);
 			i++;
 		}
+		*/
 
 		// create structure for the whole multiple alignment
 		std::cout << "Rfam:   " << record.seqence_information.at("SS_cons") << "\n";
