@@ -262,25 +262,16 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 
 	std::cout << "Test end\n";*/
 
-
 	FLT_OR_DBL* probs = vc->exp_matrices->probs;
 	int *iindex = vc->iindx;
 	int n = vc->length;
 
-	int plen = 0;
-	vrna_plist_t *ppp, *ptr;
-	ppp = vrna_plist_from_probs(vc, 0);
-	for(ptr = ppp; ptr->i; ptr++, ++plen);
-
-
 	std::vector<int> diagonals(2*n);
+	char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
 
 	// iterate along the matrix diagonals, first
 	for (i=1; i<length; i++){
 	  for (j=i+1; j<=length; j++) {
-	//for (int k=0; k < n; ++k){
-//		std::cout << "Diagonal " << k << " " << n << " " << plen << "\n";
-		//for (int i=0; i < n - k; ++i){
 			int k = i + j;
 
 			//std::cout << i << " " << j << " " << i+j << "\n";
@@ -292,43 +283,46 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 			float prob = (float)probs[iindex[i] - j];
 
 			if (prob > 0.2){
+				std::cout << i << " " << j << " " << k << "\n";
+				//if (i==6)
+				//	continue;
+
 				diagonals[k] += 1;
 				vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+
 				//vrna_hc_init(vc);
 				vrna_hc_add_bp(vc2, i, j, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS);
 
-				char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
+
+				//char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
 				vrna_mfe(vc2, test);
 				std::cout << "        " << test << "\n";
 
-				free(test);
+				//free(test);
 				vrna_fold_compound_free(vc2);
+
+				std::cout << "2222\n";
 			}
 		}
-		//std::cout << "\n";
 	}
 
+	free(test);
+
+	std::cout << "BLOOP\n";
+
 	// get dot plot structures
-	vrna_plist_t *pl1, *pl2;
-	pl1 = vrna_plist_from_probs(vc, 0.005);
-	pl2 = vrna_plist(structure, 0.95*0.95);
+	//vrna_plist_t *pl1, *pl2;
+	//pl1 = vrna_plist_from_probs(vc, 0.005);
+	//pl2 = vrna_plist(structure, 0.95*0.95);
 
-	//for(ptr = pl1; ptr->i; ptr++){
-	//	std::cout << ptr->i << " " << ptr->j << " " << ptr->p << "\n";
-	//}
-
-
-
-	//char *structure2  	 = (char*)vrna_alloc(sizeof(char) * (length + 1));
-	//aliLfold((const char**)seqs, structure2, 90);
-	//free(structure2);
-
+	std::cout << "BLOOP\n";
 
 	//DEBUG_MSG("Vienna: " << structure);
 	//DEBUG_MSG("        " << consens_mis((const char**)seqs));
 
 	structureToInteractions(structure, consensusStructure);
 
+	std::cout << "BLOOP\n";
 
 	// write dot-plot
 	//	Function used to plot the dot_plot graph
