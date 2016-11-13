@@ -213,16 +213,18 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
     std::unordered_map<double, bool> seenStructures;
 
 	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << vrna_mean_bp_distance(vc) << "\n";
-	std::cout << "        " << consens_mis((const char**)seqs) << "\n";
+	//std::cout << "        " << consens_mis((const char**)seqs) << "\n";
 //	std::cout << "Weird:  " << prob_structure << "\n";
 
-	double dist;
-	char *cent = vrna_centroid(vc, &dist);
+	// free the sequence array (terminated with a 0 at the end)
+	for (size_t k = 0; seqs[k] != 0; ++k)
+		free(seqs[k]);
 
-	std::cout << "        " << cent << " " << vrna_eval_structure(vc, cent) << " " << dist << "\n";
+	free(seqs);
 
-	free(cent);
+	// sample sequences
 
+	/*
 	//std::cout << "Alternatives: \n";
 	double sum = 0;
 	for (i=0; i<5; i++) {
@@ -254,33 +256,19 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
     }
 
 	std::cout << "SUM: " << sum << "\n";
-
-	/*char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
-	for (int asd=0; asd< 10000; ++asd)
-		vrna_mfe(vc, test);
-	free(test);
-
-	std::cout << "Test end\n";*/
-
+	*/
 
 	FLT_OR_DBL* probs = vc->exp_matrices->probs;
 	int *iindex = vc->iindx;
 	int n = vc->length;
 
-	int plen = 0;
-	vrna_plist_t *ppp, *ptr;
-	ppp = vrna_plist_from_probs(vc, 0);
-	for(ptr = ppp; ptr->i; ptr++, ++plen);
-
-
 	std::vector<int> diagonals(2*n);
+
+	char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
 
 	// iterate along the matrix diagonals, first
 	for (i=1; i<length; i++){
 	  for (j=i+1; j<=length; j++) {
-	//for (int k=0; k < n; ++k){
-//		std::cout << "Diagonal " << k << " " << n << " " << plen << "\n";
-		//for (int i=0; i < n - k; ++i){
 			int k = i + j;
 
 			//std::cout << i << " " << j << " " << i+j << "\n";
@@ -291,38 +279,25 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 
 			float prob = (float)probs[iindex[i] - j];
 
-			if (prob > 0.2){
+
+			if (prob > 0.1){
 				diagonals[k] += 1;
-				vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
-				//vrna_hc_init(vc);
-				vrna_hc_add_bp(vc2, i, j, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS);
+				std::cout << i << " " << j << " " << i+j << "\n";
+				vrna_hc_init(vc);
+				vrna_hc_add_bp(vc, i, j, 0);
 
-				char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
-				vrna_mfe(vc2, test);
+				vrna_mfe(vc, test);
 				std::cout << "        " << test << "\n";
-
-				free(test);
-				vrna_fold_compound_free(vc2);
 			}
 		}
-		//std::cout << "\n";
 	}
 
+	free(test);
+
 	// get dot plot structures
-	vrna_plist_t *pl1, *pl2;
-	pl1 = vrna_plist_from_probs(vc, 0.005);
-	pl2 = vrna_plist(structure, 0.95*0.95);
-
-	//for(ptr = pl1; ptr->i; ptr++){
-	//	std::cout << ptr->i << " " << ptr->j << " " << ptr->p << "\n";
-	//}
-
-
-
-	//char *structure2  	 = (char*)vrna_alloc(sizeof(char) * (length + 1));
-	//aliLfold((const char**)seqs, structure2, 90);
-	//free(structure2);
-
+	//vrna_plist_t *pl1, *pl2;
+	//pl1 = vrna_plist_from_probs(vc, 0.005);
+	//pl2 = vrna_plist(structure, 0.95*0.95);
 
 	//DEBUG_MSG("Vienna: " << structure);
 	//DEBUG_MSG("        " << consens_mis((const char**)seqs));
@@ -336,16 +311,12 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
 	//(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
 
+	std::cout << "Freeing\n";
+
 	// free all used RNAlib data structures
 	free(structure);
 	free(prob_structure);
 	vrna_fold_compound_free(vc);
-
-	// free the sequence array (terminated with a 0 at the end)
-	for (size_t k = 0; seqs[k] != 0; ++k)
-		free(seqs[k]);
-
-	free(seqs);
 }
 
 #endif  // #ifndef APPS_RNAMOTIF_RNALIB_UTILS_H_
