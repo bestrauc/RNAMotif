@@ -263,6 +263,7 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	int n = vc->length;
 
 	std::vector<int> diagonals(2*n);
+	char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
 
 	char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
 
@@ -278,7 +279,6 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 				continue;
 
 			float prob = (float)probs[iindex[i] - j];
-
 
 			if (prob > 0.1){
 				diagonals[k] += 1;
@@ -304,6 +304,7 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 
 	structureToInteractions(structure, consensusStructure);
 
+	std::cout << "BLOOP\n";
 
 	// write dot-plot
 	//	Function used to plot the dot_plot graph
