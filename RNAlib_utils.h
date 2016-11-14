@@ -210,17 +210,13 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 
     energy = vrna_pf(vc, prob_structure);
 
-    std::unordered_map<double, bool> seenStructures;
+    std::unordered_map<unsigned, bool> seenStructures;
 
 	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << vrna_mean_bp_distance(vc) << "\n";
 	//std::cout << "        " << consens_mis((const char**)seqs) << "\n";
 //	std::cout << "Weird:  " << prob_structure << "\n";
 
-	// free the sequence array (terminated with a 0 at the end)
-	for (size_t k = 0; seqs[k] != 0; ++k)
-		free(seqs[k]);
-
-	free(seqs);
+	std::cout << "\n";
 
 	// sample sequences
 
@@ -262,10 +258,9 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	int *iindex = vc->iindx;
 	int n = vc->length;
 
-	std::vector<int> diagonals(2*n);
-	char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
+	std::unordered_map<int, std::pair<int,int> > maxDiagonal;
+	std::vector<FLT_OR_DBL> diagonals(2*n, -1);
 
-	char *test   = (char*)vrna_alloc(sizeof(char) * (length + 1));
 
 	// iterate along the matrix diagonals, first
 	for (i=1; i<length; i++){
@@ -275,36 +270,59 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 			//std::cout << i << " " << j << " " << i+j << "\n";
 
 			// if we already constrained this anti-diagonal, skip
-			if (diagonals[k] > 0)
-				continue;
+			//if (diagonals[k] > 0)
+			//	continue;
 
 			float prob = (float)probs[iindex[i] - j];
-
-			if (prob > 0.1){
-				diagonals[k] += 1;
-				std::cout << i << " " << j << " " << i+j << "\n";
-				vrna_hc_init(vc);
-				vrna_hc_add_bp(vc, i, j, 0);
-
-				vrna_mfe(vc, test);
-				std::cout << "        " << test << "\n";
+			if (prob > diagonals[k]){
+				diagonals[k] = prob;
+				maxDiagonal[k] = std::make_pair(i,j);
 			}
 		}
 	}
 
-	free(test);
+	std::vector<TInteractionPairs> structureVariants;
+
+	char *s   = (char*)vrna_alloc(sizeof(char) * (length + 1));
+
+	for (auto val : maxDiagonal){
+		int i = val.second.first;
+		int j = val.second.second;
+
+		if (diagonals[val.first] > 0.1){
+			vrna_hc_init(vc);
+			vrna_hc_add_bp(vc, i, j, 0);
+
+			vrna_mfe(vc, s);
+
+			unsigned h = std::hash<std::string>()(std::string(s));
+			if (seenStructures[h])
+				continue;
+
+			seenStructures[h] = true;
+
+			TInteractionPairs tmp;
+			structureToInteractions(s, tmp);
+			structureVariants.push_back(tmp);
+
+			//std::cout << i << " " << j << " " << i+j << "\n";
+			std::cout << "        " << s << "\n";
+		}
+	}
+
+	free(s);
 
 	// get dot plot structures
-	//vrna_plist_t *pl1, *pl2;
-	//pl1 = vrna_plist_from_probs(vc, 0.005);
-	//pl2 = vrna_plist(structure, 0.95*0.95);
+	vrna_plist_t *pl1, *pl2;
+	pl1 = vrna_plist_from_probs(vc, 0.005);
+	pl2 = vrna_plist(structure, 0.95*0.95);
 
 	//DEBUG_MSG("Vienna: " << structure);
 	//DEBUG_MSG("        " << consens_mis((const char**)seqs));
 
-	structureToInteractions(structure, consensusStructure);
+	std::cout << structureVariants.size() << "\n";
 
-	std::cout << "BLOOP\n";
+	//structureToInteractions(structure, consensusStructure);
 
 	// write dot-plot
 	//	Function used to plot the dot_plot graph
@@ -312,12 +330,16 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
 	//(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
 
-	std::cout << "Freeing\n";
-
 	// free all used RNAlib data structures
 	free(structure);
 	free(prob_structure);
 	vrna_fold_compound_free(vc);
+
+	// free the sequence array (terminated with a 0 at the end)
+	for (size_t k = 0; seqs[k] != 0; ++k)
+		free(seqs[k]);
+
+	free(seqs);
 }
 
 #endif  // #ifndef APPS_RNAMOTIF_RNALIB_UTILS_H_
