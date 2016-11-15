@@ -262,6 +262,7 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	std::vector<FLT_OR_DBL> diagonals(2*n, -1);
 
 
+	// locate potential hairpins
 	// iterate along the matrix diagonals, first
 	for (i=1; i<length; i++){
 	  for (j=i+1; j<=length; j++) {
@@ -280,6 +281,8 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 			}
 		}
 	}
+
+	// iteratively enforce hairpins that haven't been encountered yet
 
 	std::vector<TInteractionPairs> structureVariants;
 
@@ -328,7 +331,7 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	//	Function used to plot the dot_plot graph
 	//(void) PS_dot_plot_list((char*)seqs[0], (record.header.at("AC") + std::string(".ps")).c_str(), pl1, pl1, "");
 	char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
-	//(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
+	(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
 
 	// free all used RNAlib data structures
 	free(structure);
