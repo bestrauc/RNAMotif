@@ -36,6 +36,7 @@
 #define APPS_RNAMOTIF_RNALIB_UTILS_H_
 
 #include "motif_structures.h"
+#include "motif.h"
 #include "stockholm_file.h"
 #include <functional>
 
@@ -165,21 +166,23 @@ void createInteractions(InteractionGraph &interGraph, TInteractionPairs& interPa
 	vrna_fold_compound_free(vc);
 }
 
-void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const &){
+void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> const & record, const char* constraint, RNALibFold const &){
+//void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const &){
+	TInteractionPairs &consensusStructure = motif.consensusStructure;
 	int n_seq = record.seqences.size();
    	char** seqs = new char*[n_seq+1];
    	seqs[n_seq] = 0;
 
-   	int i = 0;
-   	int j = 0;
-
-	for (auto elem : record.seqences)
-	{
-		// TODO: Get row out of the alignment object? (not always Stockholm)
-		seqs[i] = new char[elem.second.size()+1];
-		std::strcpy(seqs[i], elem.second.c_str());
-		++i;
-	}
+   	{
+		int i = 0;
+		for (auto elem : record.seqences)
+		{
+			// TODO: Get row out of the alignment object? (not always Stockholm)
+			seqs[i] = new char[elem.second.size()+1];
+			std::strcpy(seqs[i], elem.second.c_str());
+			++i;
+		}
+   	}
 
 	vrna_init_rand();
 	int length = strlen(seqs[0]);
@@ -219,11 +222,10 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	std::cout << "\n";
 
 	// sample sequences
-
-	/*
 	//std::cout << "Alternatives: \n";
+
 	double sum = 0;
-	for (i=0; i<5; i++) {
+	for (int i=0; i<5; i++) {
 	//while (sum < 0.9){
 		char *s;
 		double prob=1.;
@@ -252,66 +254,169 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
     }
 
 	std::cout << "SUM: " << sum << "\n";
-	*/
+
+
+	structureToInteractions(structure, consensusStructure);
+	TStemLoopProfile stemLoops = findStemLoops(consensusStructure);
+
+	for (auto pair : stemLoops){
+		std::cout << pair.pos.first << " " << pair.pos.second << "\n";
+	}
 
 	FLT_OR_DBL* probs = vc->exp_matrices->probs;
 	int *iindex = vc->iindx;
 	int n = vc->length;
 
-	std::unordered_map<int, std::pair<int,int> > maxDiagonal;
+	std::unordered_map<int, std::tuple<int,int,int> > hairpins;
 	std::vector<FLT_OR_DBL> diagonals(2*n, -1);
 
+	FLT_OR_DBL threshold = 0.2;
 
 	// locate potential hairpins
-	// iterate along the matrix diagonals, first
-	for (i=1; i<length; i++){
-	  for (j=i+1; j<=length; j++) {
-			int k = i + j;
+	// iterate along the matrix diagonals
+	for (int k=1; k<length; k++){
+		for (int offset=0; offset <= 1; ++offset){
+			int i = k-1+offset;
+			int j = k+1;
 
-			//std::cout << i << " " << j << " " << i+j << "\n";
+			bool inHairpin = false;
 
-			// if we already constrained this anti-diagonal, skip
-			//if (diagonals[k] > 0)
-			//	continue;
+			std::tuple<int,int,int> hairpin;
 
-			float prob = (float)probs[iindex[i] - j];
-			if (prob > diagonals[k]){
-				diagonals[k] = prob;
-				maxDiagonal[k] = std::make_pair(i,j);
+			while (i > 0 && j <= length){
+				FLT_OR_DBL prob = (float)probs[iindex[i] - j];
+
+				if (prob > threshold && !inHairpin){
+					inHairpin = true;
+					hairpin = std::make_tuple(i,j,1);
+				}
+
+				if (prob < threshold && inHairpin){
+					std::get<2>(hairpin) = j-std::get<1>(hairpin);
+					break;
+				}
+
+				i -= 1;
+				j += 1;
+			}
+
+			if (inHairpin){
+				int k = std::get<0>(hairpin) + std::get<1>(hairpin);
+				hairpins[k] = hairpin;
 			}
 		}
 	}
 
-	// iteratively enforce hairpins that haven't been encountered yet
+	TStemLoopProfile result_regions;
 
-	std::vector<TInteractionPairs> structureVariants;
+	std::queue<int> unused_hairpins;
+	bool first = true;
+
+	int count = 0;
+	int max_count = hairpins.size();
+
+	// iteratively enforce most likely bases from hairpins that haven't been encountered yet
+	do {
+		// create new structure
+		if (!first){
+			int k = unused_hairpins.front();
+
+			int i,j,l;
+			std::tie(i,j,l) = hairpins[k];
+
+			// enforce base pair with highest probability in hairpin
+			int maxi, maxj;
+			float maxp = -1;
+
+			for (int off=0; off <= l; ++off){
+				FLT_OR_DBL prob = (float)probs[iindex[i-off] - (j+off)];
+				if (prob > maxp){
+					maxp = prob;
+					maxi = i-off;
+					maxj = j+off;
+				}
+			}
+
+			vrna_hc_init(vc);
+			//std::cout << maxi << " " << maxj << "\n";
+			vrna_hc_add_bp(vc, maxi, maxj, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS);
+
+			vrna_mfe(vc, structure);
+			double e  = (double)vrna_eval_structure(vc, structure);
+			e -= (double)vrna_eval_covar_structure(vc, structure);
+
+			std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-e)/kT) << " " << vrna_mean_bp_distance(vc) << "\n";
+
+			structureToInteractions(structure, consensusStructure);
+			stemLoops = findStemLoops(consensusStructure);
+
+			for (auto pair : stemLoops){
+				std::cout << pair.pos.first << " " << pair.pos.second << "\n";
+			}
+
+			std::queue<int>().swap(unused_hairpins);
+		}
+
+		first = false;
+		std::vector<TInteractionPairs> structureVariants;
+
+		//short * struc_table = vrna_ptable(structure);
+
+		std::unordered_map<int, std::tuple<int,int,int> > tmpHairpin = hairpins;
+
+		for (auto hairpin : tmpHairpin){
+			int k = hairpin.first;
+			int i,j,l;
+			std::tie(i,j,l) = hairpin.second;
+			//std::cout << "Checking hairpin " << i << " " << j << " " << l << "\n";
+
+			int posi = i-l;
+			int posj = j+l;
+
+			bool hairpin_used = false;
+			// check if the hairpin region overlaps with any stemloop
+			for (int off=0; off <= l && !hairpin_used; ++off){
+				//hairpin_used |= struc_table[posi+off] == (posj-off);
+
+				// try the stemloops and save the one that overlaps
+				for (auto pair : stemLoops){
+					if ((pair.pos.first < posi+off) && (posj-off < pair.pos.second)){
+						partitionStemLoop(motif.seedAlignment, consensusStructure, pair);
+						result_regions.push_back(pair);
+						hairpin_used = true;
+						break;
+					}
+					//hairpin_used |= (pair.second.first < posi+off) && (posj-off < pair.second.second);
+					//std::cout << pair.second.first << " " << posi+off  << " " << posj-off << " " << pair.second.second << "\n";
+				}
+			}
+
+			// if the hairpin was used, do not search for it in the future
+			if (hairpin_used){
+				std::cout << "Hairpin from: (" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
+				hairpins.erase(k);
+			}
+			// else save it to list of unused hairpins
+			// generate new structure
+			else{
+				//std::cout << "Pushing " << k << " " << unused_hairpins.size() << "\n";
+				unused_hairpins.push(k);
+				std::cout << "Not used:		(" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
+			}
+		}
+
+		//free(struc_table);
+
+		std::cout << unused_hairpins.size() << "\n\n";
+	} while (!unused_hairpins.empty() && ++count < max_count);
+
+	std::cout << "Regions\n";
+	//for (auto pair : result_regions){
+	//	std::cout << pair.second.first << " " << pair.second.second << "\n";
+	//}
+
 
 	char *s   = (char*)vrna_alloc(sizeof(char) * (length + 1));
-
-	for (auto val : maxDiagonal){
-		int i = val.second.first;
-		int j = val.second.second;
-
-		if (diagonals[val.first] > 0.1){
-			vrna_hc_init(vc);
-			vrna_hc_add_bp(vc, i, j, 0);
-
-			vrna_mfe(vc, s);
-
-			unsigned h = std::hash<std::string>()(std::string(s));
-			if (seenStructures[h])
-				continue;
-
-			seenStructures[h] = true;
-
-			TInteractionPairs tmp;
-			structureToInteractions(s, tmp);
-			structureVariants.push_back(tmp);
-
-			//std::cout << i << " " << j << " " << i+j << "\n";
-			std::cout << "        " << s << "\n";
-		}
-	}
 
 	free(s);
 
@@ -322,8 +427,6 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 
 	//DEBUG_MSG("Vienna: " << structure);
 	//DEBUG_MSG("        " << consens_mis((const char**)seqs));
-
-	std::cout << structureVariants.size() << "\n";
 
 	//structureToInteractions(structure, consensusStructure);
 
@@ -342,7 +445,6 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	for (size_t k = 0; seqs[k] != 0; ++k)
 		free(seqs[k]);
 
-	free(seqs);
-}
+	free(seqs);}
 
 #endif  // #ifndef APPS_RNAMOTIF_RNALIB_UTILS_H_

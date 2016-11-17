@@ -347,10 +347,18 @@ struct StructureElement{
 };
 
 typedef std::vector<std::pair<BracketType, int> > TInteractionPairs;
-typedef std::pair<int, int> TRegion;
 
-typedef std::vector<std::pair<BracketType, TRegion> > TSequenceRegions;
-typedef std::vector<StructureElement> TStructure;
+typedef struct ProfileStructure{
+	BracketType btype;
+	std::pair<int, int> pos;
+	double prob = 0;
+
+	std::vector<StructureElement> elements;
+
+	ProfileStructure(BracketType btype, std::pair<int, int> pos)
+		: btype(btype), pos(pos) {};
+} TStructure;
+
 typedef std::vector<TStructure> TStemLoopProfile;
 
 struct Motif{

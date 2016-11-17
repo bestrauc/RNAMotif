@@ -198,8 +198,8 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 	return profileString;
 }
 
-TSequenceRegions findStemLoops(TInteractionPairs const &consensus){
-	TSequenceRegions stemLoops;
+TStemLoopProfile findStemLoops(TInteractionPairs const &consensus){
+	TStemLoopProfile stemLoops;
 
 	std::vector<std::stack<int> > pairStacks;
 	std::vector<std::pair<int, int> > lastHairpins;
@@ -222,7 +222,7 @@ TSequenceRegions findStemLoops(TInteractionPairs const &consensus){
 		if (bracket > i){
 			// if we found a open/close match before, save that and reset
 			if (lastHairpins[btype].second > 0){
-				stemLoops.push_back(std::make_pair(btype, lastHairpins[btype]));
+				stemLoops.push_back(TStructure(btype, lastHairpins[btype]));
 
 				// clear stack and reset last hairpin found
 				std::stack<int>().swap(pairStacks[btype]);
@@ -245,7 +245,7 @@ TSequenceRegions findStemLoops(TInteractionPairs const &consensus){
 	// save last stem-loop if there is one
 	for (unsigned i=0; i< lastHairpins.size(); ++i)
 		if (lastHairpins[i].second > 0)
-			stemLoops.push_back(std::make_pair((BracketType)i, lastHairpins[i]));
+			stemLoops.push_back(TStructure((BracketType)i, lastHairpins[i]));
 
 	return stemLoops;
 }
@@ -254,19 +254,17 @@ TSequenceRegions findStemLoops(TInteractionPairs const &consensus){
 // * any unpaired bases in between are interior loops
 // 		* if no corresponding unpaired bases: bulge
 // * innermost unpaired bases are the hairpin
-void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > stemLoopRegion){
+TStructure partitionStemLoop(TAlign &seedAlignment, TInteractionPairs &consensus, TStructure &stemStructure){
 	//TInteractionPairs &consensus = motif.consensusStructure;
-	TInteractionPairs consensus(motif.consensusStructure);
+	//TInteractionPairs consensus(motif.consensusStructure);
 
 	// consider only the brackets of type btype (TODO: ignore more elegantly without replacing anything?)
 	for (size_t i=0; i < consensus.size(); ++i){
-		if (consensus[i].first != btype)
+		if (consensus[i].first != stemStructure.btype)
 			consensus[i] = std::make_pair(MAX, -1);
 	}
 
-	TStructure stemStructure;
-
-	size_t i = stemLoopRegion.first;
+	size_t i = stemStructure.pos.first;
 	do {
 		int pos = i;
 		int right = consensus[pos].second;
@@ -286,11 +284,11 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 
 					stem.type = STEM;
 					stem.location = i;
-					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, motif.seedAlignment);
-					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
-					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment);
+					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, seedAlignment);
+					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, seedAlignment);
 
-					stemStructure.push_back(stem);
+					stemStructure.elements.push_back(stem);
 
 					// find the extension of the right bulge and add it
 					// there is one run of unpaired bases from right+1
@@ -303,8 +301,8 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 
 					bulge.type = RBULGE;
 					bulge.location = unpaired+1;
-					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, motif.seedAlignment);
-					stemStructure.push_back(bulge);
+					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, seedAlignment);
+					stemStructure.elements.push_back(bulge);
 
 					i = pos;
 				}
@@ -320,11 +318,11 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 
 			stem.type = STEM;
 			stem.location = i;
-			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, motif.seedAlignment);
-			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
-			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, motif.seedAlignment);
+			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment);
+			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1].second, consensus[i].second, seedAlignment);
+			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1].second, consensus[i].second, seedAlignment);
 
-			stemStructure.push_back(stem);
+			stemStructure.elements.push_back(stem);
 		}
 		// if unpaired, count the length of the loop and check for a bulge
 		else if (right == -1){
@@ -343,26 +341,26 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 				DEBUG_MSG("Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = LBULGE;
-				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, motif.seedAlignment);
+				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, seedAlignment);
 			}
 			// Hairpin (stop the outer loop here since all structures found)
 			else if (rb == run){
 				DEBUG_MSG("Hairpin in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = HAIRPIN;
-				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, motif.seedAlignment);
+				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, seedAlignment);
 			}
 			// Interior loop with left and right side
 			else{
 				DEBUG_MSG("Left loop: [" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: [" << lb+1 << "," << rb-1 << " " << rb-1-lb << "]");
 
 				structure.type = LOOP;
-				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, motif.seedAlignment);
-				TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, motif.seedAlignment);
+				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment);
+				TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, seedAlignment);
 			}
 
 			structure.location = pos;
-			stemStructure.push_back(structure);
+			stemStructure.elements.push_back(structure);
 
 			if (structure.type == HAIRPIN)
 				break;
@@ -375,23 +373,22 @@ void partitionStemLoop(Motif &motif, BracketType btype, std::pair<int, int > ste
 
 		i = pos;
 
-	} while (i <= stemLoopRegion.second);
+	} while (i <= stemStructure.pos.second);
 
-	motif.profile.push_back(stemStructure);
+	//profile.push_back(stemStructure);
+
+	return stemStructure;
 }
 
 // Example: (((((((.......((((((((..(((((..(((((.....((((((....((((...))))))))))...((((....((.....))....))))))))).)))))....))).))))))))))))........((((((.....)))))).................
 // take a structure table and determine the structural elements (stem, bulge, internal loop, hairpin)
 void structurePartition(Motif &motif){
-	TSequenceRegions stemLoops = findStemLoops(motif.consensusStructure);
+	TStemLoopProfile stemLoops = findStemLoops(motif.consensusStructure);
 
 	// after locating stem loops, separate structural elements
-	for (auto pair : stemLoops){
-		BracketType btype = pair.first;
-		TRegion region = pair.second;
-
+	for (auto stemLoop : stemLoops){
 		// find structural elements
-		partitionStemLoop(motif, btype, region);
+		partitionStemLoop(motif.seedAlignment, motif.consensusStructure, stemLoop);
 	}
 
 	return;

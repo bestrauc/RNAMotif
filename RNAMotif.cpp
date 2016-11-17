@@ -317,11 +317,11 @@ int main(int argc, char const ** argv)
 		if (options.pseudoknot)
 			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
 		else
-			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, RNALibFold());
+			getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
 
 		std::cout << "\n";
 
-		structurePartition(rna_motif);
+		//structurePartition(rna_motif);
 
 		//StructureElement::TProfileString test = rna_motif.profile[0][0].components[0];
 

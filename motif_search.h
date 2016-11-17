@@ -142,9 +142,9 @@ class MotifIterator{
 
 public:
 	MotifIterator(TStructure &structure, TBidirectionalIndex &index, double min_match, unsigned id)
-		: id(id), structure(structure), it(index),active_element(structure.size()-1), min_match(min_match){
+		: id(id), structure(structure), it(index),active_element(structure.elements.size()-1), min_match(min_match){
 		// push center elements of hairpin onto the stack
-		StructureElement &hairpinElement = structure.back();
+		StructureElement &hairpinElement = structure.elements.back();
 		auto &hairpin = hairpinElement.loopComponents[0];
 		pos = 0;
 		ProfilePointer posPointer(new ProfileCharIterImpl<TAlphabetProfile>(hairpin[pos]));
@@ -171,7 +171,7 @@ public:
 			return false;
 
 		// restore state from last call of next
-		StructureType stype = structure[active_element].type;
+		StructureType stype = structure.elements[active_element].type;
 		ProfilePointer statePointer = state.top();
 
 		// the iterator still points to the previous match, backtrack from that
@@ -186,8 +186,8 @@ public:
 		// When no further extension possible, check if long enough.
 
 		do {
-			stype = structure[active_element].type;
-			int n = seqan::length(structure[active_element].loopComponents[0]);
+			stype = structure.elements[active_element].type;
+			int n = seqan::length(structure.elements[active_element].loopComponents[0]);
 
 			if (stype == HAIRPIN){
 				std::cout << this->id << ": " << seqan::representative(it) << "\n";
@@ -236,15 +236,15 @@ public:
 					if (pos == n-1){
 						break;
 						--active_element;
-						pos = seqan::length(structure[active_element].loopComponents[0])-1;
-						auto next_char = structure[active_element].stemProfile[pos];
+						pos = seqan::length(structure.elements[active_element].loopComponents[0])-1;
+						auto next_char = structure.elements[active_element].stemProfile[pos];
 						ProfilePointer posPointer(new ProfileCharIterImpl<TBiAlphabetProfile>(next_char));
 						state.push(posPointer);
 						statePointer = posPointer;
 					}
 					else{
 						++pos;
-						auto next_char = structure[active_element].loopComponents[0][pos];
+						auto next_char = structure.elements[active_element].loopComponents[0][pos];
 						ProfilePointer posPointer(new ProfileCharIterImpl<TAlphabetProfile>(next_char));
 						state.push(posPointer);
 						statePointer = posPointer;
@@ -264,7 +264,7 @@ public:
 					// and report the match ending at the last hairpin element
 					if (pos == n){
 						++active_element;
-						pos = seqan::length(structure[active_element].loopComponents[0])-1;
+						pos = seqan::length(structure.elements[active_element].loopComponents[0])-1;
 						break;
 					}
 
@@ -301,7 +301,7 @@ public:
 					}
 					else{
 						--pos;
-						auto next_char = structure[active_element].stemProfile[pos];
+						auto next_char = structure.elements[active_element].stemProfile[pos];
 						ProfilePointer next_ptr(new ProfileCharIterImpl<TBiAlphabetProfile>(next_char));
 						state.push(next_ptr);
 						statePointer = next_ptr;
@@ -368,7 +368,7 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 
 	for (TStructure &structure : motif.profile){
 		// start of the hairpin in the whole sequence
-		int loc = motif.profile[id].back().location;
+		int loc = motif.profile[id].elements.back().location;
 
 		MotifIterator<TBidirectionalIndex> iter(structure, index, 11, id);
 
