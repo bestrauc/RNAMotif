@@ -216,7 +216,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
     std::unordered_map<unsigned, bool> seenStructures;
 
 	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << vrna_mean_bp_distance(vc) << "\n";
-	//std::cout << "        " << consens_mis((const char**)seqs) << "\n";
+	std::cout << "        " << consens_mis((const char**)seqs) << "\n";
 //	std::cout << "Weird:  " << prob_structure << "\n";
 
 	std::cout << "\n";
@@ -309,7 +309,6 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 	TStemLoopProfile result_regions;
 
-	std::queue<int> unused_hairpins;
 	bool first = true;
 
 	int count = 0;
@@ -319,7 +318,8 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	do {
 		// create new structure
 		if (!first){
-			int k = unused_hairpins.front();
+			//int k = unused_hairpins.front();
+			int k = hairpins.begin()->first;
 
 			int i,j,l;
 			std::tie(i,j,l) = hairpins[k];
@@ -353,72 +353,48 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 			for (auto pair : stemLoops){
 				std::cout << pair.pos.first << " " << pair.pos.second << "\n";
 			}
-
-			std::queue<int>().swap(unused_hairpins);
 		}
 
 		first = false;
 		std::vector<TInteractionPairs> structureVariants;
 
-		//short * struc_table = vrna_ptable(structure);
+		// check with which hairpins our stemLoops overlap
+		for (auto pair : stemLoops){
+			bool stemAdded = false;
+			std::unordered_map<int, std::tuple<int,int,int> > tmpHairpin = hairpins;
+			for (auto hairpin : tmpHairpin){
+				int k = hairpin.first;
+				int i,j,l;
+				std::tie(i,j,l) = hairpin.second;
 
-		std::unordered_map<int, std::tuple<int,int,int> > tmpHairpin = hairpins;
+				int posi = i-l;
+				int posj = j+l;
 
-		for (auto hairpin : tmpHairpin){
-			int k = hairpin.first;
-			int i,j,l;
-			std::tie(i,j,l) = hairpin.second;
-			//std::cout << "Checking hairpin " << i << " " << j << " " << l << "\n";
-
-			int posi = i-l;
-			int posj = j+l;
-
-			bool hairpin_used = false;
-			// check if the hairpin region overlaps with any stemloop
-			for (int off=0; off <= l && !hairpin_used; ++off){
-				//hairpin_used |= struc_table[posi+off] == (posj-off);
-
-				// try the stemloops and save the one that overlaps
-				for (auto pair : stemLoops){
+				// check if the hairpin region overlaps with any stemloop
+				for (int off=0; off <= l; ++off){
 					if ((pair.pos.first < posi+off) && (posj-off < pair.pos.second)){
+						std::cout << pair.pos.first << " " << pair.pos.second << "\n";
 						partitionStemLoop(motif.seedAlignment, consensusStructure, pair);
-						result_regions.push_back(pair);
-						hairpin_used = true;
+
+						if (!stemAdded){
+							stemAdded = true;
+							result_regions.push_back(pair);
+						}
+
+						std::cout << "Hairpin from: (" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
+						hairpins.erase(k);
+
 						break;
 					}
-					//hairpin_used |= (pair.second.first < posi+off) && (posj-off < pair.second.second);
-					//std::cout << pair.second.first << " " << posi+off  << " " << posj-off << " " << pair.second.second << "\n";
 				}
 			}
-
-			// if the hairpin was used, do not search for it in the future
-			if (hairpin_used){
-				std::cout << "Hairpin from: (" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
-				hairpins.erase(k);
-			}
-			// else save it to list of unused hairpins
-			// generate new structure
-			else{
-				//std::cout << "Pushing " << k << " " << unused_hairpins.size() << "\n";
-				unused_hairpins.push(k);
-				std::cout << "Not used:		(" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
-			}
 		}
-
-		//free(struc_table);
-
-		std::cout << unused_hairpins.size() << "\n\n";
-	} while (!unused_hairpins.empty() && ++count < max_count);
+	} while (!hairpins.empty() && ++count < max_count);
 
 	std::cout << "Regions\n";
-	//for (auto pair : result_regions){
-	//	std::cout << pair.second.first << " " << pair.second.second << "\n";
-	//}
-
-
-	char *s   = (char*)vrna_alloc(sizeof(char) * (length + 1));
-
-	free(s);
+	for (auto pair : result_regions){
+		std::cout << pair.pos.first << " " << pair.pos.second << "\n";
+	}
 
 	// get dot plot structures
 	vrna_plist_t *pl1, *pl2;
