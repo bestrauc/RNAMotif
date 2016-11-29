@@ -346,10 +346,13 @@ struct StructureElement{
 	std::vector<StructureStatistics> statistics;
 };
 
-typedef std::vector<std::pair<BracketType, int> > TInteractionPairs;
+typedef std::vector<std::pair<BracketType, int> > TConsensusStructure;
+typedef std::vector<int> TInteractions;
 
 typedef struct ProfileStructure{
 	BracketType btype;
+	TInteractions interactions;
+
 	std::pair<int, int> pos;
 	double prob = 0;
 
@@ -362,15 +365,16 @@ typedef struct ProfileStructure{
 typedef std::vector<TStructure> TStemLoopProfile;
 
 struct Motif{
+	//int seq_length;
 	// header data, same as the Stockholm header.
 	std::unordered_map<std ::string, std::string > header;
 
 	// stores interaction information for the N sequences in a N-vector
-	std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
-	std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
+	//std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
+	//std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
 
 	// the consensus interactions for the whole alignment
-	TInteractionPairs consensusStructure;
+	//TInteractionPairs consensusStructure;
 
 	// the alignment structure of the seed RNA family
 	TAlign seedAlignment;

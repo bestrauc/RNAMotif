@@ -425,7 +425,7 @@ make_parenthesis(const std::vector<int>& bpseq, const std::vector<int>& plevel)
 }
 
 void
-make_interaction_pairs(const std::vector<int>& bpseq, const std::vector<int>& plevel, TInteractionPairs & interactions)
+make_interaction_pairs(const std::vector<int>& bpseq, const std::vector<int>& plevel, TConsensusStructure & interactions)
 {
   const int n_support_parens = BracketType::MAX;
   interactions.resize(bpseq.size());
@@ -507,7 +507,8 @@ output_fa(std::ostream& os,
 /* End of IPknot functions */
 
 // reads the multiple alignment sequences into the IPknot Aln object
-void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record, TInteractionPairs &consensusStructure, const char* constraint, IPknotFold const &){
+void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record, const char* constraint, IPknotFold const &){
+	TConsensusStructure consensusStructure;
 	std::list<std::string> names;
 	std::list<std::string> seqs;
 	for (std::string name : record.sequence_names){

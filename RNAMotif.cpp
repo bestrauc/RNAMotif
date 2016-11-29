@@ -297,8 +297,9 @@ int main(int argc, char const ** argv)
 		Motif rna_motif;
 		rna_motif.header = record.header;
 		rna_motif.seedAlignment = record.alignment;
-		rna_motif.interactionGraphs.resize(record.seqences.size());
-		rna_motif.interactionPairs.resize(record.seqences.size());
+
+		//rna_motif.interactionGraphs.resize(record.seqences.size());
+		//rna_motif.interactionPairs.resize(record.seqences.size());
 
 		// build interaction graphs for each sequence
 		// TODO: Probably not even needed here.
@@ -315,7 +316,7 @@ int main(int argc, char const ** argv)
 		std::cout << "Rfam:   " << record.seqence_information.at("SS_cons") << "\n";
 		//DEBUG_MSG("Rfam:   " << record.seqence_information.at("SS_cons"));
 		if (options.pseudoknot)
-			getConsensusStructure(record, rna_motif.consensusStructure, constraint_bracket, IPknotFold());
+			getConsensusStructure(record, constraint_bracket, IPknotFold());
 		else
 			getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
 

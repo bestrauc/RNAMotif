@@ -363,7 +363,7 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 	std::vector<TProfileInterval> intervals(seqan::countSequences(index));
 
 	int id = 0;
-	int n = motif.consensusStructure.size();
+	int n = seqan::length(motif.seedAlignment);//motif.consensusStructure.size();
 	int stems = motif.profile.size();
 
 	for (TStructure &structure : motif.profile){

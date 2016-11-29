@@ -57,7 +57,7 @@
 
 
 // helper function to generate interaction vectors via bracket notation
-void bracketToInteractions(const char* structure, TInteractionPairs& interaction){
+void bracketToInteractions(const char* structure, TConsensusStructure& interaction){
 	// create stacks for different types of bracket matches
 	std::unordered_map<char, std::stack<int>* > match_stacks;
 
@@ -76,7 +76,7 @@ void bracketToInteractions(const char* structure, TInteractionPairs& interaction
 	match_stacks['>'] = &edge_stack;
 
 	unsigned n = strlen(structure);
-	interaction = TInteractionPairs(n, std::make_pair(ROUND, -1));
+	interaction = TConsensusStructure(n, std::make_pair(ROUND, -1));
 
 	for (unsigned i = 0; i < n; ++i){
 		char c = structure[i];
@@ -198,7 +198,7 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 	return profileString;
 }
 
-TStemLoopProfile findStemLoops(TInteractionPairs const &consensus){
+TStemLoopProfile findStemLoops(TConsensusStructure const &consensus){
 	TStemLoopProfile stemLoops;
 
 	std::vector<std::stack<int> > pairStacks;
@@ -222,7 +222,26 @@ TStemLoopProfile findStemLoops(TInteractionPairs const &consensus){
 		if (bracket > i){
 			// if we found a open/close match before, save that and reset
 			if (lastHairpins[btype].second > 0){
-				stemLoops.push_back(TStructure(btype, lastHairpins[btype]));
+				TStructure tmpStruc(btype, lastHairpins[btype]);
+				// save filtered consensus structure in the bracket type
+				TInteractions newConsensus(consensus.size());
+
+				for (size_t i=0; i < consensus.size(); ++i){
+					if (consensus[i].first != btype){
+						newConsensus[i] = -1;
+						//std::cout << ".";
+					}
+					else{
+						newConsensus[i] = consensus[i].second;
+						//std::cout << ((i < newConsensus[i]) ? "(" : ")");
+					}
+				}
+
+				//std::cout << "\n";
+
+				tmpStruc.interactions = newConsensus;
+
+				stemLoops.push_back(tmpStruc);
 
 				// clear stack and reset last hairpin found
 				std::stack<int>().swap(pairStacks[btype]);
@@ -244,8 +263,27 @@ TStemLoopProfile findStemLoops(TInteractionPairs const &consensus){
 
 	// save last stem-loop if there is one
 	for (unsigned i=0; i< lastHairpins.size(); ++i)
-		if (lastHairpins[i].second > 0)
-			stemLoops.push_back(TStructure((BracketType)i, lastHairpins[i]));
+		if (lastHairpins[i].second > 0){
+			TStructure tmpStruc((BracketType)i, lastHairpins[i]);
+			// save filtered consensus structure in the bracket type
+			TInteractions newConsensus(consensus.size());
+
+			for (size_t k=0; k < consensus.size(); ++k){
+				if (consensus[k].first != (BracketType)i){
+					newConsensus[k] = -1;
+					//std::cout << ".";
+				}
+				else{
+					newConsensus[k] = consensus[k].second;
+					//std::cout << ((k < newConsensus[k]) ? "(" : ")");
+				}
+			}
+
+			//std::cout << "\n";
+
+			tmpStruc.interactions = newConsensus;
+			stemLoops.push_back(tmpStruc);
+		}
 
 	return stemLoops;
 }
@@ -254,7 +292,8 @@ TStemLoopProfile findStemLoops(TInteractionPairs const &consensus){
 // * any unpaired bases in between are interior loops
 // 		* if no corresponding unpaired bases: bulge
 // * innermost unpaired bases are the hairpin
-TStructure partitionStemLoop(TAlign &seedAlignment, TInteractionPairs &consensus, TStructure &stemStructure){
+TStructure partitionStemLoop(TAlign &seedAlignment, TConsensusStructure &consensus, TStructure &stemStructure){
+//TStructure partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 	//TInteractionPairs &consensus = motif.consensusStructure;
 	//TInteractionPairs consensus(motif.consensusStructure);
 
@@ -380,16 +419,136 @@ TStructure partitionStemLoop(TAlign &seedAlignment, TInteractionPairs &consensus
 	return stemStructure;
 }
 
+TStructure partitionStemLoop2(TAlign &seedAlignment, TStructure &stemStructure){
+	TInteractions &consensus = stemStructure.interactions;
+	//TInteractionPairs consensus(motif.consensusStructure);
+
+	size_t i = stemStructure.pos.first;
+	do {
+		int pos = i;
+		int right = consensus[pos];
+
+		// count the row of opening brackets
+		if (right > pos){					// an opening bracket
+			while (right > pos){			// while it's a series of opening brackets
+				// check if the corresponding closing bracket follows
+				// or if there is a bulge on the right side
+				if ((consensus[pos+1] > pos+1) && consensus[right-1] == -1){
+					++pos;
+
+					// add the stem up to the right bulge
+					StructureElement stem;
+
+					DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1] << "," << consensus[i] << " " << consensus[i] - consensus[pos-1]+1 << "]");
+
+					stem.type = STEM;
+					stem.location = i;
+					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment);
+					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment);
+					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment);
+
+					stemStructure.elements.push_back(stem);
+
+					// find the extension of the right bulge and add it
+					// there is one run of unpaired bases from right+1
+					int unpaired = right-1;
+					while (consensus[unpaired] ==-1) --unpaired;
+
+					DEBUG_MSG("Right bulge in [" << unpaired+1 << "," << right-1 << " " << right - unpaired-1 << "]");
+
+					StructureElement bulge;
+
+					bulge.type = RBULGE;
+					bulge.location = unpaired+1;
+					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, seedAlignment);
+					stemStructure.elements.push_back(bulge);
+
+					i = pos;
+				}
+
+				++pos;
+				right = consensus[pos];
+			}
+
+			// add the uninterrupted stem we found so far
+			StructureElement stem;
+
+			DEBUG_MSG("Stem: [" << i << "," << pos-1 << " " << pos-i << "] ; [" << consensus[pos-1] << "," << consensus[i] << " " << consensus[i] - consensus[pos-1]+1 << "]");
+
+			stem.type = STEM;
+			stem.location = i;
+			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment);
+			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment);
+			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment);
+
+			stemStructure.elements.push_back(stem);
+		}
+		// if unpaired, count the length of the loop and check for a bulge
+		else if (right == -1){
+			StructureElement structure;
+
+			// get right border bracket of other half of loop (->(...(..)...)<=)
+			int run = pos;
+			int rb = consensus[pos-1];
+			while (consensus[run] == -1) ++run;
+
+			// get partner of end bracket ((...->(..)<=...))
+			int lb = consensus[run];
+
+			// Left bulge
+			if (rb - lb == 1){
+				DEBUG_MSG("Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]");
+
+				structure.type = LBULGE;
+				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, seedAlignment);
+			}
+			// Hairpin (stop the outer loop here since all structures found)
+			else if (rb == run){
+				DEBUG_MSG("Hairpin in [" << pos << "," << run-1 << " " << run-pos << "]");
+
+				structure.type = HAIRPIN;
+				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, seedAlignment);
+			}
+			// Interior loop with left and right side
+			else{
+				DEBUG_MSG("Left loop: [" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: [" << lb+1 << "," << rb-1 << " " << rb-1-lb << "]");
+
+				structure.type = LOOP;
+				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment);
+				TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, seedAlignment);
+			}
+
+			structure.location = pos;
+			stemStructure.elements.push_back(structure);
+
+			if (structure.type == HAIRPIN)
+				break;
+
+			pos = run;
+			right = consensus[pos];
+		}
+		else
+			pos = pos + 1;
+
+		i = pos;
+
+	} while (i <= stemStructure.pos.second);
+
+	//profile.push_back(stemStructure);
+
+	return stemStructure;
+}
+
 // Example: (((((((.......((((((((..(((((..(((((.....((((((....((((...))))))))))...((((....((.....))....))))))))).)))))....))).))))))))))))........((((((.....)))))).................
 // take a structure table and determine the structural elements (stem, bulge, internal loop, hairpin)
 void structurePartition(Motif &motif){
-	TStemLoopProfile stemLoops = findStemLoops(motif.consensusStructure);
+	//TStemLoopProfile stemLoops = findStemLoops(motif.consensusStructure);
 
 	// after locating stem loops, separate structural elements
-	for (auto stemLoop : stemLoops){
+	//for (auto stemLoop : stemLoops){
 		// find structural elements
-		partitionStemLoop(motif.seedAlignment, motif.consensusStructure, stemLoop);
-	}
+		//partitionStemLoop(motif.seedAlignment, motif.consensusStructure, stemLoop);
+	//}
 
 	return;
 }
