@@ -39,6 +39,7 @@
 #include "motif.h"
 #include "stockholm_file.h"
 #include <functional>
+#include <stack>
 
 // Import RNAlib. 'extern "C"', since it's a C library
 extern "C"{
@@ -144,7 +145,7 @@ double structureDefinedness(TInteractions& interactions, FLT_OR_DBL* probs, int 
 double getInteractionProbability(TInteractions& interactions, FLT_OR_DBL* probs, int *iindex, int start, int end){
 	double prob = 1;
 	std::cout << "Prob from " << start << " to " << end << "\n";
-	std::cout << interactions.size() << " size\n";
+	//std::cout << interactions.size() << " size\n";
 	for (int k=start; k <= end; ++k){
 		// index +1 to correspond to ViennaRNA's numbering
 		int i = k+1;
@@ -206,6 +207,9 @@ bool checkMatch(TStructure& region, short *strucTab){
 
 	for (int i=region.pos.first; i <= region.pos.second; ++i){
 		int j = region.interactions[i];
+
+		//if (j == -1)
+		//	continue;
 
 		if ((strucTab[i+1]-1) != j)
 			return false;
@@ -292,6 +296,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	vrna_md_t md;
 	vrna_md_set_default(&md);
 	md.uniq_ML = 1;
+	md.ribo = 1;
 	vrna_fold_compound_t *vc 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 	// add constraints if available
@@ -303,12 +308,24 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	double min_en = vrna_mfe(vc, structure);
 
 	/* rescale parameters for Boltzmann factors */
-	vrna_exp_params_rescale(vc, &min_en);
+	//vrna_exp_params_rescale(vc, &min_en);
 
-	float energy, kT;
+	float energy, kT, sfact;
 	float betaScale = 1.;
 
+	// scaling parameters
 	kT = (betaScale*((temperature+K0)*GASCONST))/1000.; /* in Kcal */
+	vrna_exp_param_t  *pf_parameters;
+	sfact         = 1.07;
+
+	pf_scale = std::exp(-(sfact*min_en)/kT/length);
+
+    /* rescale energy parameters according to above calculated pf_scale */
+    pf_parameters = vrna_exp_params_comparative(n_seq, &md);
+    pf_parameters->pf_scale = pf_scale;
+
+    /* change energy parameters in vc */
+    vrna_exp_params_subst(vc, pf_parameters);
 
     energy = vrna_pf(vc, prob_structure);
 
@@ -325,26 +342,22 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
     std::unordered_map<unsigned, bool> seenStructures;
 
-    double cdist;
-
-    char *cent_structure = vrna_centroid(vc, &cdist);
-
     if (stemLoops.empty()){
     	std::cout << "No stem loops found.\n";
     	return;
     }
 
     double interprob = getInteractionProbability(stemLoops[0].interactions, probs, iindex, 0, n-1);
-	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << vrna_mean_bp_distance(vc) << " " << structureDefinedness(stemLoops[0].interactions, probs, iindex) << " " << interprob << "\n";
-	std::cout << "Cent. : " << cent_structure << " Dist.: " << cdist << "\n";
+	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << min_en << " " << energy << "\n";// << " " << structureDefinedness(stemLoops[0].interactions, probs, iindex) << " " << interprob << "\n";
+	//std::cout << "Cent. : " << cent_structure << " Dist.: " << cdist << "\n";
 	std::cout << "        " << consens_mis((const char**)seqs) << "\n";
 //	std::cout << "Weird:  " << prob_structure << "\n";
 
 	std::cout << "\n";
 
-	free(cent_structure);
-
 	std::unordered_map<int, std::tuple<int,int,int> > hairpins;
+	std::vector<int> hairpinKeys;
+
 	std::vector<FLT_OR_DBL> diagonals(2*n, -1);
 
 	FLT_OR_DBL threshold = 0.2;
@@ -382,6 +395,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 			if (inHairpin){
 				int k = std::get<0>(hairpin) + std::get<1>(hairpin);
 				hairpins[k] = hairpin;
+				hairpinKeys.push_back(k);
 			}
 		}
 	}
@@ -391,6 +405,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	bool first = true;
 
 	int count = 0;
+
 	int max_count = hairpins.size();
 
 	// iteratively enforce most likely bases from hairpins that haven't been encountered yet
@@ -398,17 +413,23 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 		// create new structure
 		if (!first){
 			//int k = unused_hairpins.front();
-			std::random_device rd;
-			std::mt19937 rng(rd());
-			std::uniform_int_distribution<int> uni(0, hairpins.size()-1);
-			int r = uni(rng);
+//			std::random_device rd;
+//			std::mt19937 rng(rd());
+//			std::uniform_int_distribution<int> uni(0, hairpins.size()-1);
+//			int r = uni(rng);
+//
+//			auto beg = hairpins.begin();
+//			for (int i=0; i < r; ++i)
+//				++beg;
 
-			auto beg = hairpins.begin();
-			for (int i=0; i < r; ++i)
-				++beg;
+//			int k = beg->first;
 
 			//int k = hairpins.begin()->first;
-			int k = beg->first;
+			int k = hairpinKeys.back();
+			hairpinKeys.pop_back();
+
+			//std::cout << k << " constrained\n";
+
 
 			int i,j,l;
 			std::tie(i,j,l) = hairpins[k];
@@ -428,13 +449,14 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 			vrna_hc_init(vc);
 			//std::cout << maxi << " " << maxj << "\n";
-			vrna_hc_add_bp(vc, maxi, maxj, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS);
+			vrna_hc_add_bp(vc, maxi, maxj, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS | VRNA_CONSTRAINT_CONTEXT_ENFORCE);
 
+			double energy2 = vrna_pf(vc, structure);
 			vrna_mfe(vc, structure);
 			double e  = (double)vrna_eval_structure(vc, structure);
 			e -= (double)vrna_eval_covar_structure(vc, structure);
 
-			std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-e)/kT) << " " << vrna_mean_bp_distance(vc) << "\n";
+			std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-energy2)/kT) << " " << e << " " << energy2 << "\n";
 
 			structureToInteractions(structure, consensusStructure);
 			stemLoops = findStemLoops(consensusStructure);
@@ -477,15 +499,27 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 							result_regions.push_back(pair);
 						}
 
-						std::cout << "Hairpin from: (" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
+						//std::cout << "Hairpin " << k << " from: (" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
 						hairpins.erase(k);
+
+						//auto k_index = std::find(hairpinKeys.begin(), hairpinKeys.end(), k);
+
+						//if (k_index != hairpinKeys.end()){
+						//	std::cout << "Erasing\n";
+						//	hairpinKeys.erase(k_index);
+						//}
+
+						hairpinKeys.erase(std::remove(hairpinKeys.begin(), hairpinKeys.end(), k), hairpinKeys.end());
 
 						break;
 					}
 				}
 			}
 		}
-	} while (!hairpins.empty() && ++count < max_count);
+	} while (!hairpins.empty() && !hairpinKeys.empty()); //++count < max_count);
+
+	vrna_hc_init(vc);
+	vrna_pf(vc, NULL);
 
 	// assign probabilities to the hairpins we found
 	// get dot plot structures
@@ -493,10 +527,22 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	pl1 = vrna_plist_from_probs(vc, 0.005);
 	pl2 = vrna_plist(structure, 0.95*0.95);
 
+
+	/*
+	// average the probabilities of the last sampled sequences,
+	// stop when we only very unlikely structures are left
+	int averageWindow = 10;
+	double averageLimit = 0.001;
+	std::stack<double> lastProbabilities;
+	for (int i=0; i < averageWindow; ++i)
+		lastProbabilities.push(2*averageLimit);
+
+	double averageSum = 2*averageWindow*averageLimit;
+
+
 	double sum = 0;
-	for (int i=0; i<1000 && sum < 0.95; i++) {
-		std::cout << "Sample " << i << " " << sum << "\n";
-	//while (sum < 0.9){
+	for (int i=0; i<100 && sum < 0.95 && (averageSum/averageWindow > averageLimit); i++) {
+		//std::cout << "Sample " << i << " " << sum << " " << (averageSum/averageWindow) << "\n";
 		char *s;
 		double prob=1.;
 		s = vrna_pbacktrack(vc);
@@ -511,14 +557,30 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 		unsigned h = std::hash<std::string>()(std::string(s));
 		if (!seenStructures[h]){
 			sum += prob;
+
+
+			double out = lastProbabilities.top();
+			lastProbabilities.pop();
+
+			averageSum = averageSum - out + prob;
+
+			lastProbabilities.push(prob);
+
 			//printf("        %s ", s);
 			//printf("%6g %.2f  ",prob, -1*(kT*log(prob)-energy));
 			//printf("\n");
 
 			// check if any of the regions hit
 			for (unsigned k=0; k < result_regions.size(); ++k){
-				if (checkMatch(result_regions[k], strucTab))
+				if (checkMatch(result_regions[k], strucTab)){
 					result_regions[k].prob += prob;
+
+					if (k == 1){
+						printf("        %s ", s);
+						printf("%6g %.2f  ",prob, -1*(kT*log(prob)-energy));
+						printf("\n");
+					}
+				}
 				//else
 					//std::cout << k << "       " << interactionsToStructure(result_regions[k].interactions, result_regions[k].pos.first, result_regions[k].pos.second) << "\n";
 					//std::cout << "nope " << k << "\n";
@@ -536,10 +598,68 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	}
 
 	std::cout << "SUM: " << sum << "\n";
+	*/
+
+	int boltzmann_samples = 20000;
+
+	for (int i=0; i<boltzmann_samples; i++) {
+		//std::cout << "Sample " << i << " " << sum << " " << (averageSum/averageWindow) << "\n";
+		char *s;
+		s = vrna_pbacktrack(vc);
+
+		short * strucTab = vrna_ptable(s);
+
+		for (unsigned k=0; k < result_regions.size(); ++k){
+			if (checkMatch(result_regions[k], strucTab))
+				result_regions[k].countProb += 1;
+		}
+
+		free(strucTab);
+		free(s);
+	}
 
 	std::cout << "Regions\n";
-	for (auto pair : result_regions)
-		std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << "\n";// << " " << getStructureProbability(pair, probs, iindex) << "\n";
+	for (auto pair : result_regions){
+		pair.countProb /= boltzmann_samples;
+		vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
+
+		char* stemLoopStruc = interactionsToStructure(pair.interactions, pair.pos.first, pair.pos.second);
+
+		std::cout << "       " << stemLoopStruc << "\n";
+
+		// scaling parameters
+		kT = (betaScale*((temperature+K0)*GASCONST))/1000.; /* in Kcal */
+		vrna_exp_param_t  *pf_parameters;
+		sfact         = 1.07;
+
+		pf_scale = std::exp(-(sfact*min_en)/kT/length);
+
+	    /* rescale energy parameters according to above calculated pf_scale */
+	    pf_parameters = vrna_exp_params_comparative(n_seq, &md);
+	    pf_parameters->pf_scale = pf_scale;
+
+	    /* change energy parameters in vc */
+	    vrna_exp_params_subst(vc2, pf_parameters);
+
+		vrna_constraints_add(vc2, stemLoopStruc, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK | VRNA_CONSTRAINT_DB_ENFORCE_BP);
+		//vrna_constraints_add(vc2, stemLoopStruc, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
+		double sub_min = vrna_mfe(vc2, prob_structure);
+
+		double 	e  = (double)vrna_eval_structure(vc, prob_structure);
+				e -= (double)vrna_eval_covar_structure(vc, prob_structure);
+
+		std::cout << "       " << prob_structure << " " << sub_min << " " << e << "\n";
+
+		double sub_energy = vrna_pf(vc2, prob_structure);
+		std::cout << "       " << prob_structure << " " << sub_energy << "\n";
+
+		//for (int i=0; i < 10; ++i)
+		//	std::cout << "       " << vrna_pbacktrack(vc2) << "\n";
+
+		std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << " " << pair.countProb << " " << std::exp((energy-sub_energy)/kT) << " " << kT << "\n";
+
+		vrna_fold_compound_free(vc2);
+	}
 
 
 //	std::cout << "Regions\n";
@@ -552,19 +672,19 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 //		vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 //
 //		vrna_hc_init(vc2);
-//		vrna_constraints_add(vc2, stemLoopStruc, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
+//		vrna_constraints_add(vc2, stemLoopStruc, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK | VRNA_CONSTRAINT_DB_ENFORCE_BP);
 //
 //		vrna_pf(vc2, prob_structure);
 //
 //		double sum = 0;
 //		std::unordered_map<unsigned, bool> seenStructures2;
-//		for (int i=0; i<100; i++) {
+//		for (int i=0; i<5; i++) {
 //		//while (sum < 0.9){
 //			char *s;
 //			double prob=1.;
 //			s = vrna_pbacktrack(vc2);
 //			if (s == NULL)
-//				continue;
+//				std::cout << "wah\n";
 //
 //			double e  = (double)vrna_eval_structure(vc, s);
 //			e -= (double)vrna_eval_covar_structure(vc, s);
