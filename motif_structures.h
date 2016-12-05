@@ -355,7 +355,6 @@ typedef struct ProfileStructure{
 
 	std::pair<int, int> pos;
 	double prob = 0;
-	double countProb = 0;
 
 	std::vector<StructureElement> elements;
 
