@@ -427,11 +427,11 @@ make_parenthesis(const std::vector<int>& bpseq, const std::vector<int>& plevel)
 void
 make_interaction_pairs(const std::vector<int>& bpseq, const std::vector<int>& plevel, TConsensusStructure & interactions)
 {
-  const int n_support_parens = BracketType::MAX;
+  //const int n_support_parens = BracketType::MAX;
   interactions.resize(bpseq.size());
 
-  const char* left_paren="([{<";
-  const char* right_paren=")]}>";
+  //const char* left_paren="([{<";
+  //const char* right_paren=")]}>";
 
   std::string r(bpseq.size(), '.');
   for (int i=0; i!=(int)bpseq.size(); ++i)

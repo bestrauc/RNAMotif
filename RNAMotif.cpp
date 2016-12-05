@@ -38,6 +38,9 @@
 #include <seqan/arg_parse.h>
 #include <seqan/seq_io.h>
 
+// openMP
+#include <omp.h>
+
 // C++ headers
 #include <iostream>
 #include <sstream>
@@ -118,6 +121,7 @@ struct AppOptions
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
     int fold_length;
+    unsigned threads;
     bool constrain;
     bool pseudoknot;
 
@@ -158,8 +162,11 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "GENOME FILE"));
 
-    addOption(parser, seqan::ArgParseOption("ml", "max-length",       "Maximum sequence length to fold", seqan::ArgParseOption::INTEGER));
+    addOption(parser, seqan::ArgParseOption("ml", "max-length", "Maximum sequence length to fold", seqan::ArgParseOption::INTEGER));
     setDefaultValue(parser, "max-length", 1000);
+
+    addOption(parser, seqan::ArgParseOption("t", "threads", "Number of threads to use for motif extraction.", seqan::ArgParseOption::INTEGER));
+    setDefaultValue(parser, "threads", 1);
 
     addOption(parser, seqan::ArgParseOption("ps", "pseudoknot", "Predict structure with IPknot to include pseuoknots."));
     addOption(parser, seqan::ArgParseOption("co", "constrain", "Constrain individual structures with the seed consensus structure."));
@@ -192,6 +199,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     seqan::getArgumentValue(options.rna_file, parser, 0);
     seqan::getArgumentValue(options.genome_file, parser, 1);
     getOptionValue(options.fold_length, parser, "max-length");
+    getOptionValue(options.threads, parser, "threads");
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -231,6 +239,8 @@ int main(int argc, char const ** argv)
                   << "TARGET   \t" << options.genome_file << "\n\n";
     }
 
+
+    omp_set_num_threads(options.threads);
 
     std::vector<seqan::StockholmRecord<TBaseAlphabet> > records;
 
@@ -273,7 +283,9 @@ int main(int argc, char const ** argv)
 
 	std::vector<Motif> motifs(records.size());
 
-	//#pragma omp parallel for schedule(dynamic,4)
+
+
+	#pragma omp parallel for schedule(dynamic)
 	for (size_t k=0; k < records.size(); ++k){
 		seqan::StockholmRecord<TBaseAlphabet> const &record = records[k];
 
@@ -315,10 +327,11 @@ int main(int argc, char const ** argv)
 		// create structure for the whole multiple alignment
 		std::cout << "Rfam:   " << record.seqence_information.at("SS_cons") << "\n";
 		//DEBUG_MSG("Rfam:   " << record.seqence_information.at("SS_cons"));
+//#pragma omp critical
+		getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
+
 		if (options.pseudoknot)
 			getConsensusStructure(record, constraint_bracket, IPknotFold());
-		else
-			getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
 
 		std::cout << "\n";
 

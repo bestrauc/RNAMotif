@@ -347,8 +347,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
     	return;
     }
 
-    double interprob = getInteractionProbability(stemLoops[0].interactions, probs, iindex, 0, n-1);
-	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << min_en << " " << energy << "\n";// << " " << structureDefinedness(stemLoops[0].interactions, probs, iindex) << " " << interprob << "\n";
+	std::cout << "Vienna: " << structure << " Freq.: " << std::exp((energy-min_en)/kT) << " " << min_en << " " << energy << "\n";
 	//std::cout << "Cent. : " << cent_structure << " Dist.: " << cdist << "\n";
 	std::cout << "        " << consens_mis((const char**)seqs) << "\n";
 //	std::cout << "Weird:  " << prob_structure << "\n";
@@ -403,10 +402,6 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	TStemLoopProfile result_regions;
 
 	bool first = true;
-
-	int count = 0;
-
-	int max_count = hairpins.size();
 
 	// iteratively enforce most likely bases from hairpins that haven't been encountered yet
 	do {
@@ -483,6 +478,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 				// check if the hairpin region overlaps with any stemloop
 				for (int off=0; off <= l; ++off){
+					// if overlap -> partition and save among the motifs
 					if ((pair.pos.first < posi+off) && (posj-off < pair.pos.second)){
 						std::cout << pair.pos.first << " " << pair.pos.second << "\n";
 						//partitionStemLoop(motif.seedAlignment, consensusStructure, pair);
@@ -509,6 +505,9 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 				}
 			}
 		}
+
+		break;
+
 	} while (!hairpins.empty() && !hairpinKeys.empty()); //++count < max_count);
 
 	vrna_hc_init(vc);
@@ -520,27 +519,9 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	pl1 = vrna_plist_from_probs(vc, 0.005);
 	pl2 = vrna_plist(structure, 0.95*0.95);
 
-	int boltzmann_samples = 20000;
-
-	for (int i=0; i<boltzmann_samples; i++) {
-		//std::cout << "Sample " << i << " " << sum << " " << (averageSum/averageWindow) << "\n";
-		char *s;
-		s = vrna_pbacktrack(vc);
-
-		short * strucTab = vrna_ptable(s);
-
-		for (unsigned k=0; k < result_regions.size(); ++k){
-			if (checkMatch(result_regions[k], strucTab))
-				result_regions[k].countProb += 1;
-		}
-
-		free(strucTab);
-		free(s);
-	}
-
 	std::cout << "Regions\n";
 	for (auto pair : result_regions){
-		pair.countProb /= boltzmann_samples;
+		//pair.countProb /= boltzmann_samples;
 		vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 
 		char* stemLoopStruc = interactionsToStructure(pair.interactions, pair.pos.first, pair.pos.second);
@@ -576,7 +557,8 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 		//for (int i=0; i < 10; ++i)
 		//	std::cout << "       " << vrna_pbacktrack(vc2) << "\n";
 
-		std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << " " << pair.countProb << " " << std::exp((energy-sub_energy)/kT) << " " << kT << "\n";
+		//std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << " " << pair.countProb << " " << std::exp((energy-sub_energy)/kT) << " " << kT << "\n";
+		std::cout << pair.pos.first << " " << pair.pos.second <<  " " << std::exp((energy-sub_energy)/kT) << " " << kT << "\n";
 
 		vrna_fold_compound_free(vc2);
 	}
@@ -591,8 +573,8 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	// write dot-plot
 	//	Function used to plot the dot_plot graph
 	//(void) PS_dot_plot_list((char*)seqs[0], (record.header.at("AC") + std::string(".ps")).c_str(), pl1, pl1, "");
-	char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
-	(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
+	//char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
+	//(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
 
 	// free all used RNAlib data structures
 	free(structure);
