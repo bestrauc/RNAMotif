@@ -218,57 +218,6 @@ bool checkMatch(TStructure& region, short *strucTab){
 	return true;
 }
 
-void createInteractions(InteractionGraph &interGraph, TConsensusStructure& interPairs, std::string& seq_str, const char * constraint = NULL){
-	size_t seq_size = seq_str.length();
-
-	// add new vertex for each base and save the vertex references
-	interGraph.vertices.resize(seq_size);
-	interPairs.resize(seq_size);
-
-	for (unsigned i=0; i < seq_size; ++i){
-		// add interaction edge in the interaction graph
-		interGraph.vertices[i] = seqan::addVertex(interGraph.graph);
-	}
-
-	// create RNAlib data structures
-	const char * seq = seq_str.c_str();
-	char  *structure 		= (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
-	char  *weird_structure 	= (char*)vrna_alloc(sizeof(char) * (strlen(seq) + 1));
-	vrna_fold_compound_t *vc = vrna_fold_compound(seq, NULL, VRNA_OPTION_MFE | VRNA_OPTION_PF);
-
-	// add constraints if available
-	if (constraint)
-		vrna_constraints_add(vc, constraint, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK);
-
-	// predict secondary structure (will create base pair probs in compound)
-	double mfe 	 = (double)vrna_mfe(vc, structure);
-	double gibbs = (double)vrna_pf(vc, weird_structure);
-	//printf("%s %zu\n%s\n%s (%6.2f)\n", seq, seq_size, structure, weird_structure, gibbs);
-	//printf("%s %zu\n%s (%6.2f)\n", seq, seq_size, weird_structure, gibbs);
-
-	// extract base pair probabilities from fold compound
-	vrna_plist_t *pl1, *ptr;
-	pl1 = vrna_plist_from_probs(vc, 0.05);
-
-	// get size of probability list (a full list, if not filtered with a threshold,
-	// contains the upper half of the n x n probability matrix (size (n x n)/2 - n)
-	unsigned size;
-	for(size = 0, ptr = pl1; ptr->i; size++, ptr++);
-
-	// store base pair prob. in the interaction graph
-	for(unsigned i=0; i<size;++i){
-		seqan::addEdge(interGraph.graph, interGraph.vertices[pl1[i].i-1], interGraph.vertices[pl1[i].j-1], pl1[i].p);
-	}
-
-	// save sequence structure
-	structureToInteractions(structure, interPairs);
-
-	free(pl1);
-	free(structure);
-	free(weird_structure);
-	vrna_fold_compound_free(vc);
-}
-
 void getHairpinCandidates(std::unordered_map<int, std::tuple<int,int,int> > &hairpins, std::vector<int> &hairpinKeys, vrna_fold_compound_t *vc, double threshold){
 	double* probs = vc->exp_matrices->probs;
 	int *iindex = vc->iindx;
@@ -492,8 +441,6 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 		std::cout << pair.pos.first << " " << pair.pos.second << "\n";
 	}
 
-	FLT_OR_DBL* probs = vc->exp_matrices->probs;
-	int *iindex = vc->iindx;
 	int n = vc->length;
 
     std::unordered_map<unsigned, bool> seenStructures;

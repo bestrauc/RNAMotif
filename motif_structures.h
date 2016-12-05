@@ -270,22 +270,10 @@ typedef seqan::Rna5 TBaseAlphabet;
 typedef seqan::String<TBaseAlphabet> TSequence;
 typedef seqan::StringSet<TSequence> TStringSet;
 typedef seqan::StringSet<TSequence, seqan::Dependent<> > TDepStringSet;
-typedef seqan::Graph<seqan::Alignment<TDepStringSet, void, seqan::WithoutEdgeId> > TAlignGraph;
 
-typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign;      // align type
+typedef seqan::Align<TSequence, seqan::ArrayGaps> TAlign; // align type
 typedef seqan::Row<TAlign>::Type TRow;
 typedef seqan::Iterator<TRow>::Type TRowIterator;
-
-
-// Types for the interaction graphs for each sequence
-typedef float TCargo;
-typedef seqan::Graph<seqan::Undirected<TCargo> > TUgraph;
-typedef seqan::VertexDescriptor<TUgraph>::Type TUVertexDescriptor;
-
-struct vectGraphElement {
-	std::vector<TUVertexDescriptor > uVertexVect;
-	TUgraph interGraph; // this graph represents all the computed interaction edges
-};
 
 // tag for the type of folding algorithm
 struct RNALibFold__;
@@ -293,11 +281,6 @@ typedef seqan::Tag<RNALibFold__> RNALibFold;
 
 struct IPknotFold__;
 typedef seqan::Tag<IPknotFold__> IPknotFold;
-
-struct InteractionGraph {
-	std::vector<TUVertexDescriptor > vertices;
-	TUgraph graph; // this graph represents all the computed interaction edges
-};
 
 // From the Alphabet used (Dna, Rna), define a Binucleotide Alphabet and Profile strings.
 // Binucleotide alphabet: // AA, AC, AG, AT
@@ -365,13 +348,8 @@ typedef struct ProfileStructure{
 typedef std::vector<TStructure> TStemLoopProfile;
 
 struct Motif{
-	//int seq_length;
 	// header data, same as the Stockholm header.
 	std::unordered_map<std ::string, std::string > header;
-
-	// stores interaction information for the N sequences in a N-vector
-	//std::vector<InteractionGraph> interactionGraphs; // a graph of interaction probabilities
-	//std::vector<TInteractionPairs> interactionPairs; // fixed structure predictions
 
 	// the consensus interactions for the whole alignment
 	//TInteractionPairs consensusStructure;
