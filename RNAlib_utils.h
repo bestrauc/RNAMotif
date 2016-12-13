@@ -478,7 +478,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 	std::cout << "Regions\n";
 	for (auto pair : result_regions){
-		partitionStemLoop2(motif.seedAlignment, pair);
+		partitionStemLoop(motif.seedAlignment, pair);
 
 		//pair.countProb /= boltzmann_samples;
 		vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
@@ -508,21 +508,17 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 		pair.prob = std::exp((energy-sub_energy)/kT);
 
-		//for (int i=0; i < 10; ++i)
-		//	std::cout << "       " << vrna_pbacktrack(vc2) << "\n";
-
-		//std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << " " << pair.countProb << " " << std::exp((energy-sub_energy)/kT) << " " << kT << "\n";
 		std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << " " << kT << "\n";
 
 		vrna_fold_compound_free(vc2);
+
+		std::cout << "------ \n";
 	}
 
 	motif.profile = result_regions;
 
 	//DEBUG_MSG("Vienna: " << structure);
 	//DEBUG_MSG("        " << consens_mis((const char**)seqs));
-
-	//structureToInteractions(structure, consensusStructure);
 
 	// write dot-plot
 	//	Function used to plot the dot_plot graph

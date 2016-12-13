@@ -318,21 +318,9 @@ int main(int argc, char const ** argv)
 		getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
 
 		if (options.pseudoknot)
-			getConsensusStructure(record, constraint_bracket, IPknotFold());
+			getConsensusStructure(rna_motif, record, constraint_bracket, IPknotFold());
 
 		std::cout << "\n";
-
-		//structurePartition(rna_motif);
-
-		//StructureElement::TProfileString test = rna_motif.profile[0][0].components[0];
-
-
-		/*
-		for (auto bla : test){
-			for (int k = 0; k < seqan::ValueSize<seqan::ProfileChar<seqan::Rna> >::VALUE; ++k){
-				std::cout << seqan::Rna(k) << " " << bla.count[k] << "\n";
-			}
-		}*/
 
 		motifs[k] = rna_motif;
 

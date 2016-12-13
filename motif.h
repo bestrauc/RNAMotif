@@ -408,18 +408,4 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 	} while (i <= stemStructure.pos.second);
 }
 
-// Example: (((((((.......((((((((..(((((..(((((.....((((((....((((...))))))))))...((((....((.....))....))))))))).)))))....))).))))))))))))........((((((.....)))))).................
-// take a structure table and determine the structural elements (stem, bulge, internal loop, hairpin)
-void structurePartition(Motif &motif){
-	//TStemLoopProfile stemLoops = findStemLoops(motif.consensusStructure);
-
-	// after locating stem loops, separate structural elements
-	//for (auto stemLoop : stemLoops){
-		// find structural elements
-		//partitionStemLoop(motif.seedAlignment, motif.consensusStructure, stemLoop);
-	//}
-
-	return;
-}
-
 #endif  // #ifndef APPS_RNAMOTIF_MOTIF_H_

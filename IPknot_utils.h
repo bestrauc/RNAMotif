@@ -507,7 +507,7 @@ output_fa(std::ostream& os,
 /* End of IPknot functions */
 
 // reads the multiple alignment sequences into the IPknot Aln object
-void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record, const char* constraint, IPknotFold const &){
+void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> const & record, const char* constraint, IPknotFold const &){
 	TConsensusStructure consensusStructure;
 	std::list<std::string> names;
 	std::list<std::string> seqs;
@@ -570,11 +570,15 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	const char* param=NULL;
 //
 
-    BPEngineSeq* e = new CONTRAfoldModel();
-    en_s.push_back(e);
-    en_a.push_back(new AveragedModel(e));
+    BPEngineSeq* e2 = new CONTRAfoldModel();
+    en_s.push_back(e2);
+    en_a.push_back(new AveragedModel(e2));
 
-	//mix_en = new MixtureModel(en_a);
+    //BPEngineSeq* e = new RNAfoldModel(param);
+    //en_s.push_back(e);
+    //en_a.push_back(new AveragedModel(e));
+    //en_a.push_back(new AlifoldModel(param));
+    //mix_en = new MixtureModel(en_a);
 
 	BPEngineAln* en= mix_en ? mix_en : en_a[0];
 	en->calculate_posterior(aln.seq(), bp, offset);
@@ -592,6 +596,13 @@ void getConsensusStructure(seqan::StockholmRecord<TBaseAlphabet> const & record,
 	make_interaction_pairs(bpseq, plevel, consensusStructure);
 
 	std::cout << "IPknot: " << make_parenthesis(bpseq, plevel) << "\n";
+	TStemLoopProfile stemLoops = findStemLoops(consensusStructure);
+
+	for (auto pair : stemLoops){
+		partitionStemLoop(motif.seedAlignment, pair);
+
+		std::cout << pair.pos.first << " " << pair.pos.second << "\n";
+	}
 
 	//output_fa(std::cout, aln.name().front(), aln.consensus(), consensusStructure, plevel);
 
