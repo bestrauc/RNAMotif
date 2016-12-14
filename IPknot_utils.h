@@ -598,11 +598,15 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	std::cout << "IPknot: " << make_parenthesis(bpseq, plevel) << "\n";
 	TStemLoopProfile stemLoops = findStemLoops(consensusStructure);
 
-	for (auto pair : stemLoops){
+	for (auto& pair : stemLoops){
 		partitionStemLoop(motif.seedAlignment, pair);
 
-		std::cout << pair.pos.first << " " << pair.pos.second << "\n";
+		pair.prob = 1;
+
+		std::cout << pair.pos.first << " " << pair.pos.second << " " << pair.prob << "\n";
 	}
+
+	motif.profile = stemLoops;
 
 	//output_fa(std::cout, aln.name().front(), aln.consensus(), consensusStructure, plevel);
 

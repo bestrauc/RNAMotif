@@ -477,7 +477,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	pl2 = vrna_plist(structure, 0.95*0.95);
 
 	std::cout << "Regions\n";
-	for (auto pair : result_regions){
+	for (auto& pair : result_regions){
 		partitionStemLoop(motif.seedAlignment, pair);
 
 		//pair.countProb /= boltzmann_samples;
@@ -508,7 +508,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 		pair.prob = std::exp((energy-sub_energy)/kT);
 
-		std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << " " << kT << "\n";
+		std::cout << pair.pos.first << " " << pair.pos.second <<  " " << pair.prob << "\n";
 
 		vrna_fold_compound_free(vc2);
 

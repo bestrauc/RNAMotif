@@ -196,8 +196,8 @@ public:
 				int next_char = statePointer->getNextChar();
 
 				// skip gap characters
-				//if (next_char == (AlphabetSize-1))
-				//	next_char = statePointer->getNextChar();
+				if (next_char == (AlphabetSize-1))
+					next_char = statePointer->getNextChar();
 
 				//std::cout << next_char << " " << TBaseAlphabet(next_char) << "\n";
 
@@ -212,6 +212,7 @@ public:
 					if (state.empty()){
 						return setEnd();
 					}
+
 
 					// reset iterator (if we didn't come from a gap) and get previous state
 					if (statePointer->inner){
@@ -252,6 +253,8 @@ public:
 				}
 			}
 			else if (stype == STEM){
+				std::cout << this->id << ": " << seqan::representative(it) << "\n";
+
 				int stem_char = statePointer->getNextChar();
 
 				// backtrack if this stem char is exhausted
@@ -318,13 +321,13 @@ public:
 		if (seqan::repLength(it) < min_match)
 			return this->next();
 
-		/*
-		if (active_element == seqan::length(structure)-1)
-			std::cout << "EndpointH: " << pos << " " << seqan::representative(it) << " " <<  seqan::repLength(it) << "\n";
-		else{
-			int ll = seqan::length(structure[active_element].loopComponents[0]);
-			std::cout << "EndpointS: " << seqan::length(structure.back().loopComponents[0])-1 + (ll-pos) << " " << seqan::representative(it) << " " << seqan::repLength(it) << "\n";
-		}*/
+
+		//if (active_element == seqan::length(structure)-1)
+			//std::cout << "EndpointH: " << pos << " " << seqan::representative(it) << " " <<  seqan::repLength(it) << "\n";
+		//else{
+			//int ll = seqan::length(structure[active_element].loopComponents[0]);
+			//std::cout << "EndpointS: " << seqan::length(structure.back().loopComponents[0])-1 + (ll-pos) << " " << seqan::representative(it) << " " << seqan::repLength(it) << "\n";
+		//}
 
 		return true;
 	}
@@ -363,14 +366,18 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 	std::vector<TProfileInterval> intervals(seqan::countSequences(index));
 
 	int id = 0;
-	int n = seqan::length(motif.seedAlignment);//motif.consensusStructure.size();
+	int n = seqan::length(motif.seedAlignment);
 	int stems = motif.profile.size();
 
 	for (TStructure &structure : motif.profile){
 		// start of the hairpin in the whole sequence
+		std::cout <<  structure.pos.first << " " << structure.pos.second << ": " << motif.profile.size() << "\n";
+
 		int loc = motif.profile[id].elements.back().location;
 
 		MotifIterator<TBidirectionalIndex> iter(structure, index, 11, id);
+
+		std::cout << "Starting iterator\n";
 
 		while (iter.next()){
 			TOccurenceString occs = iter.getOccurrences();
@@ -432,6 +439,7 @@ std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringTyp
 	TBidirectionalIndex index(seqs);
 
     for (Motif &motif : motifs){
+    	std::cout << motif.header.at("ID") << "\n";
     	// find the locations of the motif matches
     	//std::cout << motif.header.at("AC") << "\n";
     	std::vector<TProfileInterval> result = getStemloopPositions(index, motif);

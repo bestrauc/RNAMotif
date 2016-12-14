@@ -315,10 +315,11 @@ int main(int argc, char const ** argv)
 		//DEBUG_MSG("Rfam:   " << record.seqence_information.at("SS_cons"));
 
 		//#pragma omp critical
-		getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
 
 		if (options.pseudoknot)
 			getConsensusStructure(rna_motif, record, constraint_bracket, IPknotFold());
+		else
+			getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
 
 		std::cout << "\n";
 
@@ -328,15 +329,17 @@ int main(int argc, char const ** argv)
 			free(constraint_bracket);
 	}
 
+	std::cout << "Searching for the motifs.\n";
+
 	// possibly refactor this into separate program
 
-    //seqan::StringSet<seqan::CharString> ids;
-	//seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
+    seqan::StringSet<seqan::CharString> ids;
+	seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
 
-	//seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
-	//readRecords(ids, seqs, seqFileIn);
+	seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
+	readRecords(ids, seqs, seqFileIn);
 
-	//findFamilyMatches(seqs, motifs);
+	findFamilyMatches(seqs, motifs);
 
 	//std::cout << std::endl;
 
