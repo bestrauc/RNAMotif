@@ -166,19 +166,20 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 	typedef typename seqan::Value<TStemProfileString>::Type TProfileChar;
 
 	TStemProfileString profileString;
-	seqan::resize(profileString, end1-start1+1);
+	int n = end1-start1+1;
+	seqan::resize(profileString, n);
 
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
 		// create binucleotide profile of bases in the two columns
-		for (unsigned i=0; i < seqan::length(profileString); ++i){
+		for (unsigned i=0; i < n; ++i){
 			int l_index = i+start1; // left stem
 			int r_index = end2-i;	// right stem
 
 			unsigned l_ord_val = seqan::ordValue(seqan::row(align, row)[l_index]);
 			unsigned r_ord_val = seqan::ordValue(seqan::row(align, row)[r_index]);
 
-			// if neither characeter is a gap
+			// if neither character is a gap
 			if (l_ord_val < AlphabetSize && r_ord_val < AlphabetSize){
 				unsigned pair_val = (l_ord_val*AlphabetSize) + r_ord_val;
 
@@ -188,7 +189,7 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 
 				// if there's no gap in one of the pairs, count TODO: how to handle gaps?
 				//std::cout << (int)AlphabetBitSize << " " << (1 << 2*AlphabetBitSize) << " - " << pair_val << " " << seqan::ValueSize<TProfileChar>::VALUE << "\n";
-				profileString[i].count[pair_val] += 1;
+				profileString[n-i-1].count[pair_val] += 1;
 			}
 		}
 	}
@@ -203,45 +204,47 @@ TStemLoopProfile findStemLoops(TConsensusStructure const &consensus){
 
 	std::vector<std::stack<int> > pairStacks;
 	std::vector<std::pair<int, int> > lastHairpins;
+
+	std::vector<TInteractions> filteredInteractions;
+
 	for (size_t i = 0; i < MAX; ++i){
 		pairStacks.push_back(std::stack<int>());
 		lastHairpins.push_back(std::make_pair(0,0));
+
+		// create all filtered consensus structures
+		filteredInteractions.push_back(TInteractions(consensus.size()));
+
+		for (size_t k=0; k < consensus.size(); ++k){
+			if (consensus[k].first != (BracketType)i || consensus[k].second == -1){
+				filteredInteractions[i][k] = -1;
+				//std::cout << ".";
+			}
+			else{
+				filteredInteractions[i][k] = consensus[k].second;
+				//std::cout << ((k < filteredInteractions[i][k]) ? "(" : ")");
+			}
+		}
+
+		//std::cout << "\n";
 	}
 
 	// locate the stem loops
 	for (size_t i = 0; i < consensus.size(); ++i){
 		std::pair<BracketType, int> b = consensus[i];
 		BracketType btype = b.first;
-		int bracket = b.second;
+		int partner = b.second;
 
 		// skip unmatched regions
-		if (bracket == -1)
+		if (partner == -1)
 			continue;
 
 		// opening bracket, save previous stem-loop if there was one
-		if (bracket > i){
+		if (partner > i){
 			// if we found a open/close match before, save that and reset
 			if (lastHairpins[btype].second > 0){
-				TStructure tmpStruc(btype, lastHairpins[btype]);
 				// save filtered consensus structure in the bracket type
-				TInteractions newConsensus(consensus.size());
-
-				for (size_t i=0; i < consensus.size(); ++i){
-					if (consensus[i].first != btype){
-						newConsensus[i] = -1;
-						//std::cout << ".";
-					}
-					else{
-						newConsensus[i] = consensus[i].second;
-						//std::cout << ((i < newConsensus[i]) ? "(" : ")");
-					}
-				}
-
-				//std::cout << "\n";
-
-				tmpStruc.interactions = newConsensus;
-
-				stemLoops.push_back(tmpStruc);
+				stemLoops.push_back(TStructure(btype, lastHairpins[btype],
+											  filteredInteractions[btype]));
 
 				// clear stack and reset last hairpin found
 				std::stack<int>().swap(pairStacks[btype]);
@@ -253,38 +256,22 @@ TStemLoopProfile findStemLoops(TConsensusStructure const &consensus){
 		}
 		// closing bracket
 		else {
-			if (!pairStacks[btype].empty() && bracket == pairStacks[btype].top()){
-				lastHairpins[btype].first = bracket;
-				lastHairpins[btype].second = i;
-				pairStacks[btype].pop();
-			}
+			if (pairStacks[btype].empty())
+				continue;
+
+			lastHairpins[btype].first = partner;
+			lastHairpins[btype].second = i;
+			pairStacks[btype].pop();
+
+			if (pairStacks[btype].empty()){
+				stemLoops.push_back(TStructure(btype, lastHairpins[btype],
+											  filteredInteractions[btype]));
+
+				// clear stack and reset last hairpin found
+				lastHairpins[btype] = std::pair<int, int>();
+			};
 		}
 	}
-
-	// save last stem-loop if there is one
-	for (unsigned i=0; i< lastHairpins.size(); ++i)
-		if (lastHairpins[i].second > 0){
-			TStructure tmpStruc((BracketType)i, lastHairpins[i]);
-			// save filtered consensus structure in the bracket type
-			TInteractions newConsensus(consensus.size());
-
-			for (size_t k=0; k < consensus.size(); ++k){
-				if (consensus[k].first != (BracketType)i){
-					newConsensus[k] = -1;
-					//std::cout << ".";
-				}
-				else{
-					newConsensus[k] = consensus[k].second;
-					//std::cout << ((k < newConsensus[k]) ? "(" : ")");
-				}
-			}
-
-			//std::cout << "\n";
-
-			tmpStruc.interactions = newConsensus;
-			stemLoops.push_back(tmpStruc);
-		}
-
 	return stemLoops;
 }
 

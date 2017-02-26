@@ -337,15 +337,19 @@ typedef std::vector<std::pair<BracketType, std::pair<int, int> > > TSequenceRegi
 
 typedef struct ProfileStructure{
 	BracketType btype;
+	std::pair<int, int> pos;
+
 	TInteractions interactions;
 
-	std::pair<int, int> pos;
 	double prob = 0;
 
 	std::vector<StructureElement> elements;
 
 	ProfileStructure(BracketType btype, std::pair<int, int> pos)
 		: btype(btype), pos(pos) {};
+
+	ProfileStructure(BracketType btype, std::pair<int, int> pos, TInteractions interactions)
+		: btype(btype), pos(pos), interactions(interactions) {};
 } TStructure;
 
 typedef std::vector<TStructure> TStemLoopProfile;
