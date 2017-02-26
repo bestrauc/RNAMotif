@@ -332,6 +332,9 @@ struct StructureElement{
 typedef std::vector<std::pair<BracketType, int> > TConsensusStructure;
 typedef std::vector<int> TInteractions;
 
+// legacy
+typedef std::vector<std::pair<BracketType, std::pair<int, int> > > TSequenceRegions;
+
 typedef struct ProfileStructure{
 	BracketType btype;
 	TInteractions interactions;

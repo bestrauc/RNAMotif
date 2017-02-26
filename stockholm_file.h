@@ -39,6 +39,8 @@
 // Forwards
 // ============================================================================
 
+#include <unordered_map>
+
 namespace seqan{
 
 struct Stockholm_;
