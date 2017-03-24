@@ -281,9 +281,7 @@ int main(int argc, char const ** argv)
     }
     return 0; */
 
-	std::vector<Motif> motifs(records.size());
-
-
+	std::vector<Motif*> motifs(records.size());
 
 	#pragma omp parallel for schedule(dynamic)
 	for (size_t k=0; k < records.size(); ++k){
@@ -306,9 +304,9 @@ int main(int argc, char const ** argv)
 		}
 
 
-		Motif rna_motif;
-		rna_motif.header = record.header;
-		rna_motif.seedAlignment = record.alignment;
+		Motif* rna_motif = new Motif();
+		rna_motif->header = record.header;
+		rna_motif->seedAlignment = record.alignment;
 
 		// create structure for the whole multiple alignment
 		std::cout << "Rfam:   " << record.seqence_information.at("SS_cons") << "\n";
@@ -317,9 +315,9 @@ int main(int argc, char const ** argv)
 		//#pragma omp critical
 
 		if (options.pseudoknot)
-			getConsensusStructure(rna_motif, record, constraint_bracket, IPknotFold());
+			getConsensusStructure(*rna_motif, record, constraint_bracket, IPknotFold());
 		else
-			getConsensusStructure(rna_motif, record, constraint_bracket, RNALibFold());
+			getConsensusStructure(*rna_motif, record, constraint_bracket, RNALibFold());
 
 		std::cout << "\n";
 
@@ -329,10 +327,32 @@ int main(int argc, char const ** argv)
 			free(constraint_bracket);
 	}
 
+	std::ofstream fout;
+	fout.open("output_stats.txt");
+
+	int c = 0;
+	for (auto motif : motifs){
+		c += 1;
+
+		if (motif == 0)
+			continue;
+
+		fout << seqan::length(seqan::row(motif->seedAlignment,0));
+		//fout << motif.header.at("AC");
+		//fout << c;
+
+		for (TStructure &structure : motif->profile){
+			fout << "\t";
+			fout << (structure.pos.second - structure.pos.first) << ":" << structure.elements.size() << ":" << structure.prob;
+		}
+
+		fout << "\n";
+	}
+
 	std::cout << "Searching for the motifs.\n";
 
 	// possibly refactor this into separate program
-
+	/*
     seqan::StringSet<seqan::CharString> ids;
 	seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
 
@@ -340,6 +360,7 @@ int main(int argc, char const ** argv)
 	readRecords(ids, seqs, seqFileIn);
 
 	findFamilyMatches(seqs, motifs);
+	*/
 
 	//std::cout << std::endl;
 

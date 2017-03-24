@@ -262,7 +262,9 @@ void getHairpinCandidates(std::unordered_map<int, std::tuple<int,int,int> > &hai
 	}
 }
 
-TStemLoopProfile enforceHairpins(std::unordered_map<int, std::tuple<int,int,int> > &hairpins, std::vector<int> &hairpinKeys, vrna_fold_compound_t *vc){
+TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tuple<int,int,int> > &hairpins, std::vector<int> &hairpinKeys, vrna_fold_compound_t *vc){
+	bool skipEnforce = true;
+
 	double* probs = vc->exp_matrices->probs;
 	int *iindex = vc->iindx;
 	unsigned length = vc->length;
@@ -270,30 +272,26 @@ TStemLoopProfile enforceHairpins(std::unordered_map<int, std::tuple<int,int,int>
 	char *structure = (char*)vrna_alloc(sizeof(char) * (length + 1));
 	vrna_mfe(vc, structure);
 
+	TStemLoopProfile result_regions;
 	TConsensusStructure consensusStructure;
 	structureToInteractions(structure, consensusStructure);
 	TStemLoopProfile stemLoops = findStemLoops(consensusStructure);
 
-	TStemLoopProfile result_regions;
+	if (skipEnforce){
+		for (auto stemLoop : stemLoops){
+			result_regions.push_back(stemLoop);
+		}
+
+		return result_regions;
+	}
+
+	vrna_plist_t *pl1, *pl2;
 	bool first = true;
 
 	// iteratively enforce most likely bases from hairpins that haven't been encountered yet
 	do {
 		// create new structure
 		if (!first){
-			//int k = unused_hairpins.front();
-//			std::random_device rd;
-//			std::mt19937 rng(rd());
-//			std::uniform_int_distribution<int> uni(0, hairpins.size()-1);
-//			int r = uni(rng);
-//
-//			auto beg = hairpins.begin();
-//			for (int i=0; i < r; ++i)
-//				++beg;
-
-//			int k = beg->first;
-
-			//int k = hairpins.begin()->first;
 			int k = hairpinKeys.back();
 			hairpinKeys.pop_back();
 
@@ -314,8 +312,9 @@ TStemLoopProfile enforceHairpins(std::unordered_map<int, std::tuple<int,int,int>
 			}
 
 			vrna_hc_init(vc);
-			//std::cout << maxi << " " << maxj << "\n";
+			//std::cout << "Enforcing " << maxi << " " << maxj << "\n";
 			vrna_hc_add_bp(vc, maxi, maxj, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS | VRNA_CONSTRAINT_CONTEXT_ENFORCE);
+			vrna_mfe(vc, structure);
 
 			std::cout << "Vienna: " << structure << "\n";
 
@@ -331,7 +330,17 @@ TStemLoopProfile enforceHairpins(std::unordered_map<int, std::tuple<int,int,int>
 		std::vector<TConsensusStructure> structureVariants;
 
 		// check with which hairpins our stemLoops overlap
-		for (auto pair : stemLoops){
+		for (auto stemLoop : stemLoops){
+			partitionStemLoop(motif.seedAlignment, stemLoop);
+
+			StructureElement &hairpinStem = stemLoop.elements[stemLoop.elements.size()-2];
+			int hairpinStart = hairpinStem.location;
+			int hairpinEnd = hairpinStart + seqan::length(hairpinStem.loopComponents[0])
+										  + seqan::length(stemLoop.elements.back().loopComponents[0])
+										  + seqan::length(hairpinStem.loopComponents[1]);
+
+			std::cout << hairpinStart << " -- " << hairpinEnd << "\n";
+
 			bool stemAdded = false;
 			std::unordered_map<int, std::tuple<int,int,int> > tmpHairpin = hairpins;
 			for (auto hairpin : tmpHairpin){
@@ -342,15 +351,30 @@ TStemLoopProfile enforceHairpins(std::unordered_map<int, std::tuple<int,int,int>
 				int posi = i-l;
 				int posj = j+l;
 
+				std::cout << "Testing " << i << " " << j << "\n";
+
 				// check if the hairpin region overlaps with any stemloop
 				for (int off=0; off <= l; ++off){
 					// if overlap -> partition and save among the motifs
-					if ((pair.pos.first < posi+off) && (posj-off < pair.pos.second)){
-						std::cout << pair.pos.first << " " << pair.pos.second << "\n";
+					if ((stemLoop.pos.first < posi+off) && (posj-off < stemLoop.pos.second)){
+						//std::cout << stemLoop.pos.first << "-" << stemLoop.pos.second << " overlaps " << (posi+off) << "-" << (posj-off) << "\n";
+						//std::cout << hairpinStart << " " << hairpinEnd << "-" << (posi+off) << " " << (posj-off) << "\n";
+					}
+					if ((hairpinStart <= (posi+off) && (posi+off) < hairpinEnd && hairpinEnd <= (posj-off)) ||
+						((posi+off) <=hairpinStart && hairpinStart < (posj-off) && (posj-off) <= hairpinEnd)){
+						//std::cout << hairpinStart << " " << hairpinEnd << " overlaps" << (posi+off) << "-" << (posj-off) << "\n";
 
 						if (!stemAdded){
 							stemAdded = true;
-							result_regions.push_back(pair);
+							std::cout << "Added loop " << stemLoop.pos.first << " " << stemLoop.pos.second << "\n";
+							result_regions.push_back(stemLoop);
+
+							//pl1 = vrna_plist_from_probs(vc, 0.005);
+							//pl2 = vrna_plist(structure, 0.95*0.95);
+
+							//char *tmp = (char*)("hairpin" + std::to_string(k) + std::string(".ps")).c_str();
+							//(void) PS_dot_plot_list((char*)consens_mis((const char**)vc->sequences), tmp, pl1, pl2, structure);
+
 						}
 
 						//std::cout << "Hairpin " << k << " from: (" << i-l << "," << j+l << ") to (" << i << "," << j << ")\n";
@@ -365,7 +389,7 @@ TStemLoopProfile enforceHairpins(std::unordered_map<int, std::tuple<int,int,int>
 		}
 
 		// TODO: Actually enforce hairpins.
-		break;
+		//break;
 
 	} while (!hairpins.empty() && !hairpinKeys.empty());
 
@@ -462,10 +486,20 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 	std::vector<FLT_OR_DBL> diagonals(2*n, -1);
 
-	double threshold = 0.2;
+	double threshold = 0.1;
 	getHairpinCandidates(hairpins, hairpinKeys, vc, threshold);
 
-	TStemLoopProfile result_regions = enforceHairpins(hairpins, hairpinKeys, vc);
+	/*
+	std::cout << "Candidates:\n";
+
+	for (auto key : hairpinKeys){
+		int i,j,l;
+		std::tie(i,j,l) = hairpins[key];
+		std::cout << i << " " << j << " - " << l << "\n";
+	}
+	*/
+
+	TStemLoopProfile result_regions = enforceHairpins(motif, hairpins, hairpinKeys, vc);
 
 	vrna_hc_init(vc);
 	vrna_pf(vc, NULL);
@@ -473,10 +507,10 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	// assign probabilities to the hairpins we found
 	// get dot plot structures
 	vrna_plist_t *pl1, *pl2;
-	pl1 = vrna_plist_from_probs(vc, 0.005);
-	pl2 = vrna_plist(structure, 0.95*0.95);
+	//pl1 = vrna_plist_from_probs(vc, 0.005);
+	//pl2 = vrna_plist(structure, 0.95*0.95);
 
-	std::cout << "Regions\n";
+	std::cout << "Regions (" << result_regions.size() << ")\n";
 	for (auto& pair : result_regions){
 		partitionStemLoop(motif.seedAlignment, pair);
 
@@ -523,8 +557,9 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	// write dot-plot
 	//	Function used to plot the dot_plot graph
 	//(void) PS_dot_plot_list((char*)seqs[0], (record.header.at("AC") + std::string(".ps")).c_str(), pl1, pl1, "");
-	char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
-	(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
+	//std::cout << "Writing dot plot, no?\n";
+	//char *tmp = (char*)(record.header.at("AC") + std::string(".ps")).c_str();
+	//(void) PS_dot_plot_list((char*)consens_mis((const char**)seqs), tmp, pl1, pl2, structure);
 
 	// free all used RNAlib data structures
 	free(structure);
