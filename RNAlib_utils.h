@@ -100,6 +100,46 @@ void WUSStoPseudoBracket(std::string const & structure, char* pseudoBracketStrin
 	pseudoBracketString[i] = 0;
 }
 
+double compute_MCC(char *struc1, char *struc2){
+	double tp = 0, tn = 0, fp = 0, fn = 0;
+	for (int i=0; struc1[i]; ++i){
+		if (struc1[i] == '.'){
+			if (struc1[i] == struc2[i])
+				tn += 1;
+			else
+				fp += 1;
+		}
+		else{
+			if (struc1[i] == struc2[i])
+				tp += 1;
+			else if (struc2[i] == '.')
+				fn += 1;
+			else
+				fp += 1;
+		}
+	}
+
+	if ((tn+fn)*(tp+fn)*(tn+fp)*(tp+fp) == 0)
+		return 0;
+
+	double mcc = ((tp*tn) - (fn*fp)) / std::sqrt((tn+fn)*(tp+fn)*(tn+fp)*(tp+fp));
+	//std::cout << (tp*tn) << " " << (fn*fp) << " " << (tn+fn) << " " << (tp+fn) << " " << (tn+fp) << " " << (tp+fp) << "\n";
+	//std::cout << tp << " " << tn << " " << fp << " " << fn << " " << mcc << "\n";
+
+	return mcc;
+}
+
+double compute_MCC(char *struc1, std::vector<char *> structures){
+	double max_mcc = -1;
+	for (char * struc: structures){
+		double mcc = compute_MCC(struc1, struc);
+		if (mcc > max_mcc)
+			max_mcc = mcc;
+	}
+
+	return max_mcc;
+}
+
 void structureToInteractions(const char * const structure, TConsensusStructure &interactions){
 	short * struc_table = vrna_ptable(structure);
 
@@ -193,18 +233,6 @@ double getStructureProbability(TStructure& structure, FLT_OR_DBL* probs, int *ii
 }
 
 bool checkMatch(TStructure& region, short *strucTab){
-//	for (int i=0; i < region.interactions.size(); ++i)
-//		std::cout << region.interactions[i] << " ";
-//	std::cout << "\n\n";
-//
-//	for (int i=1; i <= strucTab[0]; ++i)
-//		std::cout << strucTab[i] << " ";
-//	std::cout << "\n\n";
-//
-//	for (int i=0; i < region.interactions.size(); ++i)
-//			std::cout << region.interactions[i] << "," << strucTab[i+1]-1 << " ";
-//		std::cout << "\n\n";
-
 	for (int i=region.pos.first; i <= region.pos.second; ++i){
 		int j = region.interactions[i];
 
@@ -262,7 +290,14 @@ void getHairpinCandidates(std::unordered_map<int, std::tuple<int,int,int> > &hai
 	}
 }
 
-TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tuple<int,int,int> > &hairpins, std::vector<int> &hairpinKeys, vrna_fold_compound_t *vc){
+void append_char_array(std::vector<char *> &structures, char *structure, size_t destination_size){
+	char *tmp = new char[destination_size+1];
+	strncpy(tmp, structure, destination_size);
+	tmp[destination_size] = '\0';
+	structures.push_back(tmp);
+}
+
+TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tuple<int,int,int> > &hairpins, std::vector<int> &hairpinKeys, vrna_fold_compound_t *vc, char **seqs, std::vector<char *> &structures){
 	bool skipEnforce = true;
 
 	double* probs = vc->exp_matrices->probs;
@@ -271,6 +306,7 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 
 	char *structure = (char*)vrna_alloc(sizeof(char) * (length + 1));
 	vrna_mfe(vc, structure);
+	append_char_array(structures, structure, length);
 
 	TStemLoopProfile result_regions;
 	TConsensusStructure consensusStructure;
@@ -311,12 +347,28 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 				}
 			}
 
-			vrna_hc_init(vc);
+			{
+			vrna_md_t md;
+			vrna_md_set_default(&md);
+			md.uniq_ML = 1;
+			md.ribo = 1;
+
+			vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 			//std::cout << "Enforcing " << maxi << " " << maxj << "\n";
+			vrna_hc_add_bp(vc2, maxi, maxj, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS | VRNA_CONSTRAINT_CONTEXT_ENFORCE);
+			vrna_mfe(vc2, structure);
+
+			//vrna_fold_compound_free(vc2);
+			}
+
+			/*
+			vrna_hc_init(vc);
+			std::cout << "Enforcing " << maxi << " " << maxj << "\n";
 			vrna_hc_add_bp(vc, maxi, maxj, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS | VRNA_CONSTRAINT_CONTEXT_ENFORCE);
 			vrna_mfe(vc, structure);
+			*/
 
-			std::cout << "Vienna: " << structure << "\n";
+			//std::cout << "Vienna: " << structure << "\n";
 
 			structureToInteractions(structure, consensusStructure);
 			stemLoops = findStemLoops(consensusStructure);
@@ -339,7 +391,7 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 										  + seqan::length(stemLoop.elements.back().loopComponents[0])
 										  + seqan::length(hairpinStem.loopComponents[1]);
 
-			std::cout << hairpinStart << " -- " << hairpinEnd << "\n";
+			//std::cout << hairpinStart << " -- " << hairpinEnd << "\n";
 
 			bool stemAdded = false;
 			std::unordered_map<int, std::tuple<int,int,int> > tmpHairpin = hairpins;
@@ -351,7 +403,7 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 				int posi = i-l;
 				int posj = j+l;
 
-				std::cout << "Testing " << i << " " << j << "\n";
+				//std::cout << "Testing " << i << " " << j << "\n";
 
 				// check if the hairpin region overlaps with any stemloop
 				for (int off=0; off <= l; ++off){
@@ -366,8 +418,9 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 
 						if (!stemAdded){
 							stemAdded = true;
-							std::cout << "Added loop " << stemLoop.pos.first << " " << stemLoop.pos.second << "\n";
+							//std::cout << "Added loop " << stemLoop.pos.first << " " << stemLoop.pos.second << "\n";
 							result_regions.push_back(stemLoop);
+							append_char_array(structures, structure, length);
 
 							//pl1 = vrna_plist_from_probs(vc, 0.005);
 							//pl2 = vrna_plist(structure, 0.95*0.95);
@@ -399,8 +452,6 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 }
 
 void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> const & record, const char* constraint, RNALibFold const &){
-//void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> const & record, TInteractionPairs &consensusStructure, const char* constraint, RNALibFold const &){
-	TConsensusStructure consensusStructure;
 	int n_seq = record.seqences.size();
    	char** seqs = new char*[n_seq+1];
    	seqs[n_seq] = 0;
@@ -415,6 +466,8 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 			++i;
 		}
    	}
+
+   	// ****** Set up ViennaRNA parameters
 
 	vrna_init_rand();
 	int length = strlen(seqs[0]);
@@ -434,10 +487,8 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 		std::cout << "bracket:" << constraint << std::endl;
 	}
 
+	// Compute minimum free energy
 	double min_en = vrna_mfe(vc, structure);
-
-	/* rescale parameters for Boltzmann factors */
-	//vrna_exp_params_rescale(vc, &min_en);
 
 	float energy, kT, sfact;
 	float betaScale = 1.;
@@ -456,9 +507,15 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
     /* change energy parameters in vc */
     vrna_exp_params_subst(vc, pf_parameters);
 
+    // ****************************************************************
+
+    // Compute partition function
     energy = vrna_pf(vc, prob_structure);
 
+    // Find stem loops
+    TConsensusStructure consensusStructure;
 	structureToInteractions(structure, consensusStructure);
+	motif.externalBases = getExternal(consensusStructure, motif.seedAlignment);
 	TStemLoopProfile stemLoops = findStemLoops(consensusStructure);
 
 	for (auto pair : stemLoops){
@@ -486,7 +543,7 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 
 	std::vector<FLT_OR_DBL> diagonals(2*n, -1);
 
-	double threshold = 0.1;
+	double threshold = 0.2;
 	getHairpinCandidates(hairpins, hairpinKeys, vc, threshold);
 
 	/*
@@ -499,7 +556,29 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 	}
 	*/
 
-	TStemLoopProfile result_regions = enforceHairpins(motif, hairpins, hairpinKeys, vc);
+	std::vector<char *> structures;
+
+	TStemLoopProfile result_regions = enforceHairpins(motif, hairpins, hairpinKeys, vc, seqs, structures);
+
+	std::cout << structures.size() << " SIZE\n";
+	for (char * struc : structures){
+		std::cout << struc << "\n";
+	}
+
+    // Compute MCC value
+	// ********************************************************
+
+    char *rfam_structure = NULL;
+    rfam_structure = new char[motif.seqence_information.at("SS_cons").length() + 1];
+    WUSStoPseudoBracket(motif.seqence_information.at("SS_cons"), rfam_structure);
+
+    motif.mcc = compute_MCC(rfam_structure, structures);
+
+    for (char * struc : structures)
+    	free(struc);
+
+    free(rfam_structure);
+    // ********************************************************
 
 	vrna_hc_init(vc);
 	vrna_pf(vc, NULL);
@@ -522,17 +601,17 @@ void getConsensusStructure(Motif &motif, seqan::StockholmRecord<TBaseAlphabet> c
 		std::cout << "       " << stemLoopStruc << "\n";
 
 		// scaling parameters
-		kT = (betaScale*((temperature+K0)*GASCONST))/1000.; /* in Kcal */
+		kT = (betaScale*((temperature+K0)*GASCONST))/1000.; // in Kcal
 		vrna_exp_param_t  *pf_parameters;
 		sfact         = 1.07;
 
 		pf_scale = std::exp(-(sfact*min_en)/kT/length);
 
-	    /* rescale energy parameters according to above calculated pf_scale */
+	    // rescale energy parameters according to above calculated pf_scale
 	    pf_parameters = vrna_exp_params_comparative(n_seq, &md);
 	    pf_parameters->pf_scale = pf_scale;
 
-	    /* change energy parameters in vc */
+	    // change energy parameters in vc
 	    vrna_exp_params_subst(vc2, pf_parameters);
 
 		vrna_constraints_add(vc2, stemLoopStruc, VRNA_CONSTRAINT_DB | VRNA_CONSTRAINT_DB_DOT | VRNA_CONSTRAINT_DB_RND_BRACK | VRNA_CONSTRAINT_DB_ENFORCE_BP);

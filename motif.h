@@ -55,6 +55,61 @@
 // Functions
 // ============================================================================
 
+template <typename TAlphabet>
+double characterEntropy(seqan::ProfileChar<TAlphabet> &profChar){
+	double h = 0;
+	int size = seqan::ValueSize<TAlphabet>::VALUE-1;
+
+	double norm_sum = 0;
+	for (int i=0; i < size; ++i){
+		norm_sum += profChar.count[i];
+	}
+
+	for (int i=0; i < size; ++i){
+		double freq = profChar.count[i] / norm_sum;
+
+		if (freq == 0)
+			continue;
+
+		h += freq * std::log(freq);
+	}
+
+	return -h;
+}
+
+template <typename TAlphabet>
+double profileEntropy(seqan::String<seqan::ProfileChar<TAlphabet> > &profileString){
+	double h = 0;
+	int n = seqan::length(profileString);
+
+	for (int i = 0; i < n; ++i){
+		double ch = characterEntropy(profileString[i]);
+		h += ch;
+
+		//std::cout << ch << " ";
+	}
+
+	//std::cout << "\n";
+
+	return h/n;
+}
+
+double loopEntropy(std::vector<TLoopProfileString> &profileStringComponents){
+	//std::cout << profileStringComponents[0] << " " << profileStringComponents[1] << "\n";
+
+	int n = seqan::length(profileStringComponents);
+
+	double H1 = profileEntropy(profileStringComponents[0]);
+	double H2 = n == 2 ? profileEntropy(profileStringComponents[1]) : 0;
+
+	return (H1+H2)/n;
+}
+
+double stemEntropy(TStemProfileString &stemProfile){
+	//std::cout << profileStringComponents[0] << " " << profileStringComponents[1] << "\n";
+
+	return profileEntropy(stemProfile);
+}
 
 // helper function to generate interaction vectors via bracket notation
 void bracketToInteractions(const char* structure, TConsensusStructure& interaction){
@@ -101,7 +156,7 @@ void bracketToInteractions(const char* structure, TConsensusStructure& interacti
 	}
 }
 
-TLoopProfileString addProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align){
+TLoopProfileString addProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align, bool reverse = false){
 	typedef seqan::Row<TAlign>::Type TRow;
 	typedef typename seqan::Value<TLoopProfileString>::Type TProfileChar;
 
@@ -135,17 +190,24 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 		if (seqLength > stats.max_length)
 			stats.max_length = seqLength;
 
+		unsigned n = seqan::length(profileString);
+
 		// create profile of bases in this column
-		for (unsigned i=0; i < seqan::length(profileString); ++i){
+		for (unsigned i=0; i < n; ++i){
 			int index = i+start;
 			//std::cout << "(" << seqan::ordValue(seqan::row(align, row)[index]) << "," << seqan::row(align, row)[index] << ")" << " ";
 			unsigned ord_val = seqan::ordValue(seqan::row(align, row)[index]);
 
 			// save gaps as last character in alphabet
-			if (ord_val > seqan::ValueSize<TProfileChar>::VALUE)
+			if (ord_val > seqan::ValueSize<TProfileChar>::VALUE){
+				continue;
 				ord_val = AlphabetSize-1;
+			}
 
-			profileString[i].count[ord_val] += 1;
+			if (reverse)
+				profileString[n-i-1].count[ord_val] += 1;
+			else
+				profileString[i].count[ord_val] += 1;
 		}
 		//std::cout << std::endl;
 	}
@@ -197,6 +259,45 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 	structureElement.stemProfile = profileString;
 
 	return profileString;
+}
+
+std::vector<TLoopProfileString> getExternal(TConsensusStructure &consensus, TAlign &align){
+	TLoopProfileString profile;
+	typedef typename seqan::Value<TLoopProfileString>::Type TProfileChar;
+	int aln_len = seqan::length(seqan::row(align,0));
+
+	unsigned i=0;
+
+	while (i < aln_len){
+		std::pair<BracketType, int> b = consensus[i];
+ 		int partner = b.second;
+
+		if (partner == -1){
+			TProfileChar profChar;
+			// store the profile of the alignment in [start,end]
+			for (unsigned row=0; row < length(rows(align)); ++row){
+				// create profile of bases in this column
+				unsigned ord_val = seqan::ordValue(seqan::row(align, row)[i]);
+
+				// save gaps as last character in alphabet
+				if (ord_val > seqan::ValueSize<TProfileChar>::VALUE)
+					ord_val = AlphabetSize-1;
+
+				profChar.count[ord_val] += 1;
+			}
+
+			seqan::appendValue(profile, profChar);
+		}
+		else{
+			i = partner;
+		}
+
+		++i;
+	}
+
+	std::vector<TLoopProfileString> ret = {profile};
+
+	return ret;
 }
 
 TStemLoopProfile findStemLoops(TConsensusStructure const &consensus){
@@ -303,7 +404,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 					stem.type = STEM;
 					stem.location = i;
-					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment);
+					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment, true);
 					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment);
 					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment);
 
@@ -321,6 +422,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 					bulge.type = RBULGE;
 					bulge.location = unpaired+1;
 					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, seedAlignment);
+					bulge.loopLeft = false;
 					stemStructure.elements.push_back(bulge);
 
 					i = pos;
@@ -337,7 +439,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 			stem.type = STEM;
 			stem.location = i;
-			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment);
+			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment, true);
 			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment);
 			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment);
 
@@ -346,6 +448,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 		// if unpaired, count the length of the loop and check for a bulge
 		else if (right == -1){
 			StructureElement structure;
+			StructureElement structure2;
 
 			// get right border bracket of other half of loop (->(...(..)...)<=)
 			int run = pos;
@@ -360,7 +463,8 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 				DEBUG_MSG("Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = LBULGE;
-				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, seedAlignment);
+				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, seedAlignment, true);
+				structure.loopLeft = true;
 			}
 			// Hairpin (stop the outer loop here since all structures found)
 			else if (rb == run){
@@ -368,14 +472,23 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 				structure.type = HAIRPIN;
 				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, seedAlignment);
+				structure.loopLeft = false;
 			}
 			// Interior loop with left and right side
 			else{
 				DEBUG_MSG("Left loop: [" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: [" << lb+1 << "," << rb-1 << " " << rb-1-lb << "]");
 
 				structure.type = LOOP;
-				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment);
-				TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, seedAlignment);
+				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment, true);
+				TStemProfileString loopProfile  = addProfile(structure, pos, run-1, lb+1, rb-1, seedAlignment);
+				structure.loopLeft = true;
+				TLoopProfileString rightProfile = addProfile(structure2, lb+1, rb-1, seedAlignment);
+				TStemProfileString loopProfile2  = addProfile(structure2, pos, run-1, lb+1, rb-1, seedAlignment);
+				structure2.loopLeft = false;
+
+				//TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment, true);
+				//TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, seedAlignment);
+				//TStemProfileString loopProfile  = addProfile(structure, pos, run-1, lb+1, rb-1, seedAlignment);
 			}
 
 			structure.location = pos;

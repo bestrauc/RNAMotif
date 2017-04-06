@@ -315,6 +315,7 @@ struct StructureStatistics{
 // Stem, Internal Loop, Hairpin Loop
 struct StructureElement{
 	StructureType type;
+	bool loopLeft;
 	int location;
 
 	// for HAIRPIN: just one string
@@ -357,6 +358,7 @@ typedef std::vector<TStructure> TStemLoopProfile;
 struct Motif{
 	// header data, same as the Stockholm header.
 	std::unordered_map<std ::string, std::string > header;
+	std::unordered_map<std::string, std::string > seqence_information;
 
 	// the consensus interactions for the whole alignment
 	//TInteractionPairs consensusStructure;
@@ -366,6 +368,10 @@ struct Motif{
 
 	// the profiles for the individual stem loops
 	TStemLoopProfile profile;
+
+	std::vector<TLoopProfileString> externalBases;
+
+	double mcc = 0;
 };
 
 // ============================================================================
