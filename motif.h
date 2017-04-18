@@ -172,9 +172,12 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
 		TRow & i_row = seqan::row(align,row);
+		//std::cout << i_row << "\n";
+
 		unsigned source_start = seqan::toSourcePosition(i_row, start);
 		unsigned source_end = seqan::toSourcePosition(i_row, end);
-		unsigned seqLength = source_end -  source_start+1;
+		// get length of sequence without gaps (don't add +1 if the last position is a gap)
+		unsigned seqLength = source_end -  source_start + (1-seqan::isGap(i_row, end));
 
 		// check if we only had gaps in the region (end-start+1 doesn't work then)
 		if (source_start == source_end && seqan::isGap(i_row, end))
@@ -190,6 +193,8 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 		if (seqLength > stats.max_length)
 			stats.max_length = seqLength;
 
+		//std::cout << seqan::infix(i_row, start, end+1) << " " << start << " " << end << " " << source_start << " " << source_end << "\n";
+
 		unsigned n = seqan::length(profileString);
 
 		// create profile of bases in this column
@@ -200,8 +205,9 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 
 			// save gaps as last character in alphabet
 			if (ord_val > seqan::ValueSize<TProfileChar>::VALUE){
-				continue;
+				//continue;
 				ord_val = AlphabetSize-1;
+				//std::cout << "Gappé! " << ord_val << "\n";
 			}
 
 			if (reverse)
@@ -241,18 +247,26 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 			unsigned l_ord_val = seqan::ordValue(seqan::row(align, row)[l_index]);
 			unsigned r_ord_val = seqan::ordValue(seqan::row(align, row)[r_index]);
 
+			if (l_ord_val == AlphabetSize-1 || r_ord_val == AlphabetSize-1){
+				throw(std::runtime_error("Whaaaaa?"));
+			}
+
 			// if neither character is a gap
 			if (l_ord_val < AlphabetSize && r_ord_val < AlphabetSize){
 				unsigned pair_val = (l_ord_val*AlphabetSize) + r_ord_val;
-
-				//std::cout << pair_val << "\n";
-
-				//std::cout << l_ord_val << " " << r_ord_val << " " << pair_val << " " <<  (pair_val >> seqan::BitsPerValue<TAlphabet>::VALUE) << " " << (pair_val & (AlphabetSize-1)) << "\n";
-
-				// if there's no gap in one of the pairs, count TODO: how to handle gaps?
-				//std::cout << (int)AlphabetBitSize << " " << (1 << 2*AlphabetBitSize) << " - " << pair_val << " " << seqan::ValueSize<TProfileChar>::VALUE << "\n";
 				profileString[n-i-1].count[pair_val] += 1;
 			}
+			///*
+			// if both characters are gaps
+			else if (l_ord_val > AlphabetSize && r_ord_val > AlphabetSize){
+				l_ord_val = AlphabetSize-1;
+				r_ord_val = AlphabetSize-1;
+				unsigned pair_val = (l_ord_val*AlphabetSize) + r_ord_val;
+				//std::cout << "Found a stem gap! " << pair_val << "\n";
+				profileString[n-i-1].count[pair_val] += 1;
+			}
+			// ignore cases where only one of the sides is a gap (can't deal with those)
+			//*/
 		}
 	}
 
@@ -472,6 +486,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 				structure.type = HAIRPIN;
 				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, seedAlignment);
+				std::cout << "HAIRPIN: " << structure.statistics[0].min_length << " Max: " << structure.statistics[0].max_length << "\n";
 				structure.loopLeft = false;
 			}
 			// Interior loop with left and right side

@@ -237,6 +237,13 @@ int main(int argc, char const ** argv)
 				  << "MAX LENGTH\t" << options.fold_length << '\n'
 				  << "RNA      \t" << options.rna_file << '\n'
                   << "TARGET   \t" << options.genome_file << "\n\n";
+
+        std::cout << "Data types\n"
+        		  << seqan::ValueSize<TBaseAlphabet>::VALUE << "\n"
+				  << seqan::ValueSize<TAlphabet>::VALUE << "\n"
+        		  << seqan::ValueSize<TBiAlphabet>::VALUE << "\n"
+				  << seqan::ValueSize<TAlphabetProfile>::VALUE << "\n"
+				  << seqan::ValueSize<TBiAlphabetProfile>::VALUE << "\n";
     }
 
 
@@ -355,7 +362,6 @@ int main(int argc, char const ** argv)
 
 		double h_none;
 
-
 		for (TStructure &structure : motif->profile){
 			//fout << "\t";
 			//fout << (structure.pos.second - structure.pos.first) << ":" << structure.elements.size() << ":" << structure.prob;
@@ -471,6 +477,7 @@ int main(int argc, char const ** argv)
 		//fout << motif->mcc << "\n";
 	}
 
+	//return 0;
 	std::cout << "Searching for the motifs.\n";
 
 	// possibly refactor this into separate program
@@ -483,23 +490,54 @@ int main(int argc, char const ** argv)
 
 	std::cout << "Read reference DB with " << seqan::length(seqs) << " records\n";
 
-	//findFamilyMatches(seqs, motifs);
+	StructureIterator strucIter(motifs[0]->profile[1].elements);
+	std::tuple<int, int, int> bla;
 
-	TStructure &prof1 = motifs[0]->profile[2];
-
-	std::cout << prof1.pos.first << " " << prof1.pos.second << "\n";
-	StructureIterator strucIter(prof1.elements);
-
-	std::pair<int,int> bla;
-	std::pair<int,int> end(-1,-1);
-	while(bla != end){
+	std::set<std::string> patSet;
+	//1710720
+	//18475776
+	//20528640
+	uint64_t test = 0;
+	while(bla != strucIter.end){
 		bla = strucIter.get_next_char();
 
-		//std::cout << strucIter.state.size() << "\n";
-		//std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		if (strucIter.patLen() >= 4){
+			++test;
+			//std::cout << "Skipping " << strucIter.patLen() << "\n";
+			std::string strString = strucIter.printPattern();
+			std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << "\n";
+			//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << "\n";
+			if (patSet.find(strString) != patSet.end()){
+				std::cout << strString << " already seen?!\n";
+			}
+
+			patSet.insert(strString);
+
+			//if (!strucIter.full_pattern)
+			strucIter.skip_char();
+		}
 	}
 
+	std::cout << test << " " << patSet.size() << " SIZE\n";
+
 	std::cout << strucIter.count << "\n";
+	std::cout << strucIter.single << " " << strucIter.paired << "\n";
+
+	//for (std::set<std::string>::iterator it=patSet.begin(); it!=patSet.end(); ++it){
+	//	std::cout << *it << "\n";
+	//}
+
+	//searchProfile(seqs, motifs[0]->profile[2]);
+
+	//findFamilyMatches(seqs, motifs);
+
+	//TStructure &prof1 = motifs[0]->profile[2];
+
+	//std::cout << prof1.pos.first << " " << prof1.pos.second << "\n";
+
+
+
+
 
 
 
