@@ -58,14 +58,16 @@
 
 class ProfileCharIter{
 public:
-	bool gapped = false;
 	bool left = false;
 
 	int charNum = 0;
 	int charPos = 0;
 	int gapsLeft = 0;
+	int offset = 0;
+	int gapsize = 0;
 
-	virtual int getNextChar() = 0;
+	virtual std::pair<int,int> getNextChar() = 0;
+	virtual int nextLength() = 0;
 	virtual int lastChar() = 0;
 	virtual bool atGap() = 0;
 	virtual bool atEnd() = 0;
@@ -75,9 +77,16 @@ public:
 
 class ProfileIterEmpty : public ProfileCharIter{
 public:
-	ProfileIterEmpty (){};
+	ProfileIterEmpty (int offset, int charNum) {
+		this->offset = offset;
+		this->charNum = charNum;
+	};
 
-	int getNextChar(){
+	std::pair<int,int> getNextChar(){
+		return std::make_pair(-1,-1);
+	}
+
+	int nextLength(){
 		return -1;
 	}
 
@@ -107,26 +116,28 @@ public:
 template <typename TProfileChar>
 class ProfileCharIterImpl : public ProfileCharIter{
 	typedef typename seqan::SourceValue<TProfileChar>::Type TProfileAlphabet;
-	TProfileChar c;
 	const uint64_t char_size = seqan::ValueSize<TProfileChar>::VALUE;
+
+	TProfileChar c;
+	std::vector<std::pair<int, int>> gapVals;
+	int gap_pos = 0;
 
 	int state = 0;
 	std::vector<int> idx;
 	int total;
 	int threshold;
+	bool at_gap = false;
+
 
 public:
-	ProfileCharIterImpl (TProfileChar c, int charNum, int charPos, int gapsLeft, bool left, int threshold=1) : c(c), idx(char_size), total(seqan::totalCount(c)){
+	ProfileCharIterImpl (TProfileChar c, std::map<int, int> &gapMap, int charNum, int charPos, int gapsLeft, int offset, bool left, int threshold=0)
+							: c(c), idx(char_size), total(seqan::totalCount(c)){
 		this->charNum = charNum;
 		this->charPos = charPos;
 		this->left = left;
 		this->gapsLeft = gapsLeft;
+		this->offset = offset;
 		this->threshold = threshold;
-
-		// if no gaps are left, clear gap character
-		if (gapsLeft == 0){
-			c.count[char_size-2] = 0;
-		}
 
 		// fill index vector with indies [0,1,..,N-1]
 		std::iota(idx.begin(), idx.end(), 0);
@@ -137,13 +148,58 @@ public:
 				return (c.count[i1] > c.count[i2]);
 			}
 		);
+
+		int ind = 0;
+		while (c.count[idx[ind]] > 0){
+			//std::cout << c.count[idx[ind]] << " char seen " << idx[ind] << "\n";
+			++ind;
+		}
+
+		//std::cout << "Gaps: " << gapsLeft << "\n";
+
+
+		// insert gaps into gapVal vector and sort by value
+		for (auto itr = gapMap.begin(); itr != gapMap.end(); ++itr){
+			// do not include gaps that don't occur often enough or which would exceed
+			// the maximum number of gaps for this section
+			if (itr->second < threshold || itr->first > gapsLeft)
+				continue;
+
+			gapVals.push_back(*itr);
+		}
+
+		std::sort(gapVals.begin(), gapVals.end(),
+			[&](std::pair<int, int>& a, std::pair<int, int>& b) {
+				return a.second > b.second;
+			}
+		);
 	}
 
-	int getNextChar(){
+	std::pair<int,int> getNextChar(){
 		if (atEnd())
-			return -1;
+			return std::make_pair(-1,-1);
 
-		return TProfileAlphabet(idx[state++]);
+		at_gap = false;
+		gapsize = 0;
+
+		// return a gap
+		if (state == char_size || (gap_pos < gapVals.size() && c.count[idx[state]] < gapVals[gap_pos].second)){
+			at_gap = true;
+			gapsize = gapVals[gap_pos].first;
+			return std::make_pair(gapVals[gap_pos++].first, -1);
+		}
+
+		// else return an alphabet character
+		return std::make_pair(0, idx[state++]);
+	}
+
+	// after this profile has been processed, the pattern length is increased
+	// by 1 or, in the case of a bidirectional pattern, by 2
+	int nextLength(){
+		if (at_gap)
+			return this->charNum;
+
+		return (this->charNum + 1 + std::is_same<TProfileChar, TBiAlphabetProfile>::value);
 	}
 
 	int lastChar(){
@@ -151,13 +207,14 @@ public:
 	}
 
 	bool atGap(){
+		return this->at_gap;
 		//std::cout << idx[state] << " " <<  (char_size-2) << "\n";
-		return !atEnd() && (idx[state] == (char_size-2));
+		//return !atEnd() && (idx[state] == (char_size-2));
 	}
 
 	// end if all chars that occurred were returned
 	bool atEnd(){
-		return ((state == char_size) || (c.count[idx[state]] <= threshold));
+		return (state == char_size || (c.count[idx[state]] <= threshold)) && (gap_pos >= gapVals.size());
 	}
 
 	void setEnd(){
@@ -166,18 +223,140 @@ public:
 };
 
 class StructureIterator{
-public:
+private:
 	typedef ProfileCharIterImpl<TAlphabetProfile> TSinglePointer;
 	typedef ProfileCharIterImpl<TBiAlphabetProfile> TPairPointer;
 	typedef std::shared_ptr<ProfileCharIter> ProfilePointer;
 
+	int total_length = 0;
+	std::vector<int> cumulative_lens;
 	std::vector<StructureElement> structure_elements;
+
 	int element;
 	int elem_length;
 	int pos;
 	int intital_pos;
 	ProfilePointer prof_ptr;
 
+	// return the profile pointer of the profile
+	// that corresponds to position pos
+	ProfilePointer next_profile(int offset){
+		int next_pos  = prof_ptr->charPos;
+		int last_gaps = prof_ptr->gapsLeft;
+
+		bool changed = false;
+
+		//std::cout << element << " " << pos << "\n";
+
+		//std::cout << "Before " << last_gaps << " " << offset << "\n";
+
+		for (int i=0; i < offset; ++i){
+			// advance in the structure elements if possible
+			if (pos < (elem_length-1)){
+				++pos;
+			}
+			else if ((pos == (elem_length-1)) && (element > 0)){
+				--element;
+				elem_length = seqan::length(structure_elements[element].loopComponents[0]);
+				last_gaps  = elem_length - structure_elements[element].statistics[0].min_length;
+				pos = 0;
+				//std::cout << "Changed!\n";
+				changed = true;
+			}
+			// else return empty profile pointer as an end marker
+			else {
+				//std::cout << "AT ENEDEDEDD\n";
+				return ProfilePointer(new ProfileIterEmpty(i, prof_ptr->nextLength()));
+			}
+
+			// the next position in the pattern goes to the left for stems or left-sided loops
+			// else it does not change (-0)
+			next_pos = next_pos - (structure_elements[element].type == StructureType::STEM || structure_elements[element].loopLeft);
+		}
+
+		if (!changed && prof_ptr->atGap()){
+			last_gaps -= offset;
+		}
+
+		//std::cout << "After " << last_gaps << "\n";
+
+		ProfilePointer next_ptr;
+
+		if (structure_elements[element].type == StructureType::STEM) {
+
+			next_ptr = ProfilePointer(new TPairPointer(structure_elements[element].stemProfile[pos],
+									  structure_elements[element].gap_lengths[pos],
+									  prof_ptr->nextLength(),
+									  next_pos,
+									  last_gaps,
+									  offset,
+									  false));
+		}
+		else {
+			next_ptr = ProfilePointer(new TSinglePointer(structure_elements[element].loopComponents[0][pos],
+									  structure_elements[element].gap_lengths[pos],
+									  prof_ptr->nextLength(),
+									  next_pos,
+									  last_gaps,
+									  offset,
+									  structure_elements[element].loopLeft));
+		}
+
+		//std::cout << "new: " << next_ptr->charNum << "\n";
+
+		//std::cout << element << " " << pos << "\n";
+
+		return next_ptr;
+	}
+
+	// get next profile pointer position
+	ProfilePointer next_profile(){
+		return this->next_profile(1);
+	}
+
+	bool is_initial_state(){
+		return state.size() == 0;
+	}
+
+	bool atEnd(){
+		return (typeid(*prof_ptr) == typeid(ProfileIterEmpty));
+	}
+
+	std::pair<int, ProfilePointer> prev_profile(){
+		//std::cout << "Removing " << (typeid(*prof_ptr) == typeid(TSinglePointer) ? "Single" : "Double") << " - " << prof_ptr->offset << " " << prof_ptr->charNum << "\n";
+		std::pair<int, ProfilePointer> ret = {0, state.top()};
+		//std::cout << "Next " << (typeid(*next_ptr) == typeid(TSinglePointer) ? "Single" : "Double") << " - " << next_ptr->offset << " " << next_ptr->charNum << "\n";
+
+		//std::cout << "OFFSET: " << prof_ptr->offset << "\n";
+
+		// decrement position in the motif
+		//std::cout << "Resetting offset " << prof_ptr->offset << "\n";
+		for (int i=0; i < prof_ptr->offset; ++i){
+		//for (int i=0; i < ret.second->offset; ++i){
+			--pos;
+
+			if (pos < 0) {
+				++element;
+				elem_length = seqan::length(structure_elements[element].loopComponents[0]);
+				pos = elem_length - 1;
+			}
+		}
+
+		//std::cout << element << " " << pos << "\n";
+
+		// backtrack 1 character for unidirectional char, 2 for bidirectional
+		// do not backtrack if we popped a gap character (since the iterator will have ignored it)
+
+		if (!ret.second->atGap()){
+			ret.first += 1 + (typeid(*ret.second) == typeid(TPairPointer));
+		}
+
+		state.pop();
+
+		return ret;
+	}
+
+public:
 	//bool full_pattern = false;
 	uint64_t single = 0, paired = 0;
 	uint64_t count;
@@ -187,6 +366,11 @@ public:
 
 	StructureIterator(std::vector<StructureElement> &structure_elements)
 		: structure_elements(structure_elements), end(-1,-1,-1) {
+		//for (StructureElement elem : structure_elements){
+		//	cumulative_lens.push_back(total_length);
+		//	total_length += seqan::length(elem.loopComponents[0]);
+		//}
+
 		uint64_t sum = 1;
 		if (true){
 			for (StructureElement elem : structure_elements){
@@ -223,80 +407,55 @@ public:
 		auto &hairpin = structure_elements[element].loopComponents[0];
 		this->intital_pos = structure_elements[element].location;
 
-		prof_ptr = ProfilePointer(new TSinglePointer(hairpin[pos], 1, this->intital_pos,
-								  elem_length - structure_elements[element].statistics[0].min_length, false));
+		prof_ptr = ProfilePointer(new TSinglePointer(hairpin[pos], structure_elements[element].gap_lengths[pos], 0,
+								  this->intital_pos, this->elem_length-structure_elements[element].statistics[0].min_length,
+								  1, false));
 
 		//std::cout << "INIT gaps " << elem_length << " " << structure_elements[element].statistics[0].min_length << " " << structure_elements[element].statistics[0].max_length << "\n";
 	}
 
-	std::tuple<int, int, int> get_next_char(){
+	std::tuple<int, int, int> get_next_char(int backtrack=0){
 		std::tuple<int, int, int> ret;
 
-		int backtracked = 0;
+		int backtracked = backtrack;
+
+		//std::cout << prof_ptr->atEnd() << "\n";
 
 		// get previous state (backtrack to valid state if necessary)
 		while (prof_ptr->atEnd()) {
-			// if no more characters can be generated
-			if (state.size() == 0){
-				//std::cout << "ENDING\n";
+			//std::cout << "At End\n";
+
+//			// if no more characters can be generated
+			if (is_initial_state()){
 				return this->end;
 			}
 
-			//full_pattern = false;
+			//std::cout << "Backtracking\n";
 
-			//std::cout << "Popping " << (typeid(*prof_ptr) == typeid(TSinglePointer)) << " from stack\n";
-			if(typeid(*prof_ptr) == typeid(ProfileIterEmpty)){
-				prof_ptr = state.top();
-				state.pop();
-				continue;
-			}
+			int tmp_back;
+			std::tie(tmp_back, prof_ptr) = this->prev_profile();
+			backtracked += tmp_back;
 
-			--pos;
-
-			// check if the substructure has to be changed again
-			if (pos < 0) {
-				//std::cout << "Going up\n";
-				++element;
-				elem_length = seqan::length(structure_elements[element].loopComponents[0]);
-				pos = elem_length - 1;
-			}
-
-			prof_ptr = state.top();
-			state.pop();
-
-			// backtrack 1 character for unidirectional char, 2 for bidirectional
-			// do not backtrack if we popped a gap character (since the iterator will have ignored it)
-			if (typeid(*prof_ptr) == typeid(TSinglePointer)){
-				backtracked += 1;
-			}
-			else{
-				backtracked += 2;
-			}
+			//std::cout << backtracked << "\n";
 		}
 
-		// adjust pattern length and position temporarily if we have a gap here
-		// ********************************************************************
-		int gap_correct = (1 + (structure_elements[element].type == StructureType::STEM));
-		// if gap characters, do not account for them in the size
-		if (prof_ptr->atGap()){
-			//std::cout << "Gap correct\n";
-			//std::cout << prof_ptr->charNum << "\n";
-			prof_ptr->gapped = true;
-			prof_ptr->charNum -= gap_correct;
-		}
-		// remove gap adjustment if there currently is one
-		else if (prof_ptr->gapped){
-			//std::cout << "Undo gap correct\n";
-			prof_ptr->gapped = false;
-			prof_ptr->charNum += gap_correct;
-		}
-		// ********************************************************************
-
-		// subtract a gap if the current character is a gap
-		int new_gaps = prof_ptr->gapsLeft - prof_ptr->gapped;
+		//std::cout << prof_ptr->charNum << " num -- \n";
 
 		// advance to the next character in the active state
-		int next_char_val = prof_ptr->getNextChar();
+		int skip_count, next_char_val;
+		std::tie(skip_count, next_char_val) = prof_ptr->getNextChar();
+
+		// save state of advanced pointer
+		state.push(prof_ptr); // save last character state
+
+		// if we are at a gap, skip the gap to the next character
+		if (skip_count > 0){
+			//std::cout << "Skipping gap of length " << skip_count << " " << prof_ptr->charNum << " " << prof_ptr->nextLength() << " " << state.size() << "\n";
+
+			prof_ptr = this->next_profile(skip_count);
+			return get_next_char(backtracked);
+		}
+
 
 		// return one or two characters to search, depending on the substructure
 		if (typeid(*prof_ptr) == typeid(TSinglePointer)){
@@ -313,69 +472,13 @@ public:
 		else{
 			++paired;
 			//std::cout << "Double\n";
-			int lchar = next_char_val / AlphabetSize;
-			int rchar = next_char_val % AlphabetSize;
+			unsigned lchar = next_char_val / AlphabetSize;
+			unsigned rchar = next_char_val % AlphabetSize;
 
 			ret = std::make_tuple(backtracked, lchar, rchar);
 		}
 
-		state.push(prof_ptr); // save last character state
-
-		// advance in the structure elements if possible
-		if (pos < (elem_length-1)) {
-			++pos;
-		}
-		// go to next substructure if necessary
-		else if ((pos == (elem_length-1)) && (element > 0)){
-			//std::cout << "Changing structures\n";
-			--element;
-			elem_length = seqan::length(structure_elements[element].loopComponents[0]);
-			pos = 0;
-
-			// set allowed number of gaps for this substructures
-			new_gaps = elem_length - structure_elements[element].statistics[0].min_length;
-			//std::cout << "Gaps " << new_gaps << "\n";
-		}
-		// element == 0, searched everything
-		else{
-			//++count;
-			prof_ptr = ProfilePointer(new ProfileIterEmpty());
-			return ret;
-		/*
-			if (count % 1000000 == 0){
-				//std::cout << state.size() << " - " << count << " / " << sum << "\n";
-				std::stack<ProfilePointer> stateCopy = state;
-
-				while (!stateCopy.empty()){
-					std::cout << (int)stateCopy.top()->atEnd();
-					stateCopy.pop();
-				}
-				std::cout << "\n";
-		*/
-		}
-
-		//state.push(prof_ptr); // save last character state
-
-		// Update character pointer.
-		// Special cases:
-		// - keep track of leftward start position in the alignment
-		if (structure_elements[element].type == StructureType::STEM) {
-
-			prof_ptr = ProfilePointer(new TPairPointer(structure_elements[element].stemProfile[pos],
-									  prof_ptr->charNum+2,
-									  prof_ptr->charPos-1,
-									  new_gaps,
-									  false));
-		}
-		else {
-			int newpos = prof_ptr->charPos - structure_elements[element].loopLeft;
-
-			prof_ptr = ProfilePointer(new TSinglePointer(structure_elements[element].loopComponents[0][pos],
-									  prof_ptr->charNum+1,
-									  newpos,
-									  new_gaps,
-									  structure_elements[element].loopLeft));
-		}
+		prof_ptr = this->next_profile();
 
 		return ret;
 	}
@@ -387,7 +490,8 @@ public:
 	int patLen(){
 		//if (full_pattern)			return prof_ptr->charNum;
 
-		return state.empty() ? 0 : state.top()->charNum;
+		//return state.empty() ? 0 : state.top()->charNum;
+		return prof_ptr->charNum;
 	}
 
 	int patPos(){
@@ -409,6 +513,9 @@ public:
 			tmpptr = stateCopy.top();
 			stateCopy.pop();
 
+			//if (tmpptr->atGap())
+			//	continue;
+
 			int cur_char_val = tmpptr->lastChar();
 
 			if (typeid(*tmpptr) == typeid(TSinglePointer)){
@@ -419,14 +526,23 @@ public:
 					throw(std::runtime_error("Can't be AlphabetSize?!"));
 				}
 
-				if (cur_char_val == AlphabetSize-1){
+				//if (cur_char_val == AlphabetSize-1){
+				if (tmpptr->atGap()){
+					//continue;
+					for (int i=0; i < tmpptr->gapsize; ++i){
+						//std::cout << "Offset: " << tmpptr->offset << "\n";
+						if (tmpptr->left)
+							ss << '-';
+						else
+							rightPrint.push('-');
+					}
+						//cur_print_char = '-';
 					continue;
-					cur_print_char = '-';
 					//std::cout << "Waaaa\n";
 				}
-				else{
-					cur_print_char = TBaseAlphabet(cur_char_val);
-				}
+				//else{
+				cur_print_char = TBaseAlphabet(cur_char_val);
+				//}
 
 				if (!tmpptr->left)
 					rightPrint.push(cur_print_char);
@@ -436,8 +552,9 @@ public:
 				//std::cout << "'" << cur_char_val << "' ";
 			}
 			else{
-				int lchar = cur_char_val / AlphabetSize;
-				int rchar = cur_char_val % AlphabetSize;
+				//std::cout << cur_char_val << "--\n";
+				unsigned lchar = cur_char_val / AlphabetSize;
+				unsigned rchar = cur_char_val % AlphabetSize;
 
 				char lprint_char;
 				char rprint_char;
@@ -447,16 +564,25 @@ public:
 					throw(std::runtime_error("Can't be AlphabetSize?!"));
 				}
 
-				if (lchar == AlphabetSize-1 || rchar == AlphabetSize-1){
-					continue;
-					lprint_char = '-';
-					rprint_char = '-';
+				//if (lchar == AlphabetSize-1 || rchar == AlphabetSize-1){
+				if (tmpptr->atGap()){
+					//continue;
+					for (int i=0; i < tmpptr->offset; ++i){
+						ss << '-';
+						rightPrint.push('-');
+					}
+					//lprint_char = '-';
+					//rprint_char = '-';
 					//std::cout << "Wuuuu\n";
+					continue;
 				}
-				else{
-					lprint_char = TBaseAlphabet(lchar);
-					rprint_char = TBaseAlphabet(rchar);
-				}
+
+				//else{
+				lprint_char = TBaseAlphabet(lchar);
+				rprint_char = TBaseAlphabet(rchar);
+				//}
+
+				//std::cout << lchar << "\n";
 
 				ss << lprint_char;
 				//std::cout << "'(" << lchar << "','" << rchar << "') ";
@@ -475,30 +601,19 @@ public:
 	}
 
 	// do not extend the current word further
-	void skip_char(){
+	int skip_char(){
+		if (is_initial_state()){
+			return -1;
+		}
+
+		//std::cout << "Skipping\n";
+
 		count++;
 
-		if (state.size() == 0){
-			//std::cout << "FULL PATTERN\n";
-			return;
-		}
+		int backtracked;
+		std::tie(backtracked, prof_ptr) = this->prev_profile();
 
-		if(typeid(*prof_ptr) == typeid(ProfileIterEmpty)){
-			prof_ptr = state.top();
-			state.pop();
-			return;
-		}
-
-		--pos;
-
-		if (pos < 0) {
-			++element;
-			elem_length = seqan::length(structure_elements[element].loopComponents[0]);
-			pos = elem_length - 1;
-		}
-
-		prof_ptr = state.top();
-		state.pop();
+		return backtracked;
 	}
 };
 
@@ -522,6 +637,8 @@ class MotifIterator{
 	}
 
 public:
+	unsigned count = 0;
+
 	MotifIterator(TStructure &structure, TBidirectionalIndex &index, double min_match)
 		: structure_iter(structure.elements), it(index), min_match(min_match){
 	}
@@ -539,70 +656,109 @@ public:
 		}
 
 		bool extension = true;
-		bool paired;
 		int backtracked, lchar, rchar;
 
-		// search until the pattern cannot be extended further
-		// or the required seed length has been reached.
-		while (extension && seqan::repLength(it) < min_match){
-			// get the next characters to search for (either one or two, depending on the search direction)
-			std::tuple<int, int, int> n_char = structure_iter.get_next_char();
+		do {
+			// search until the pattern cannot be extended further
+			// or the required seed length has been reached.
+			while (extension && seqan::repLength(it) < min_match){
+				// get the next characters to search for (either one or two, depending on the search direction)
+				std::tuple<int, int, int> n_char = structure_iter.get_next_char();
 
-			// check if no next pattern existed, iterator exhausted
-			if (n_char == structure_iter.end){
-				return setEnd();
-			}
+				//std::string strString = structure_iter.printPattern();
+				//std::cout << "Target: " << strString << " " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+				//std::cout << "State:  " << seqan::representative(it) << "\n";
 
-			// unpack next pattern and backtracking information
-			std::tie(backtracked, lchar, rchar) = n_char;
-
-			// check if the next character was the result
-			// of backtracking into a different pattern
-			// reset search iterator accordingly
-			while (backtracked > 0){
-				//std::cout << seqan::representative(it) << "\n";
-				bool wentUp = goUp(it);
-
-				//std::cout << seqan::representative(it) << "\n";
-
-				// Assertion: We have to be able to backtrack, else
-				// structure iterator and search iterator are not in sync.
-				if (!wentUp){
-					throw(std::runtime_error("Can't go the way we came?"));
+				// check if no next pattern existed, iterator exhausted
+				if (n_char == structure_iter.end){
+					return setEnd();
 				}
-				--backtracked;
-			}
 
-			//std::cout << "-------------------------\n";
+				// unpack next pattern and backtracking information
+				std::tie(backtracked, lchar, rchar) = n_char;
 
-			// remember if we tried to extend both sides, which we later have to undo
-			paired = (lchar != -1) && (rchar != -1);
+				// check if the next character was the result
+				// of backtracking into a different pattern
+				// reset search iterator accordingly
+				while (backtracked > 0){
+					//std::cout << "Backtracking.. " << seqan::representative(it) << " to ";
+					//std::cout << seqan::representative(it) << "\n";
+					bool wentUp = goUp(it);
+					//bool wentUp = true;
+					//std::cout << seqan::representative(it) << "\n";
 
-			// search for the pattern provided
-			// one-directional extension rightwards
-			if (lchar == -1) {
-				extension = seqan::goDown(it, rchar, seqan::Rev());
-			}
-			// one-directional extension leftwards
-			else if (rchar == -1) {
-				extension = seqan::goDown(it, lchar, seqan::Fwd());
-			}
-			// bi-directional extension
-			else {
-				bool wentLeft  = seqan::goDown(it, lchar, seqan::Fwd());
-				bool wentRight = seqan::goDown(it, rchar, seqan::Rev());
-
-				// successful if we went both left and right
-				extension = wentLeft && wentRight;
-
-				// if we just followed one direction but not the other - go back
-				if (wentLeft ^ wentRight){
-					seqan::goUp(it);
+					// Assertion: We have to be able to backtrack, else
+					// structure iterator and search iterator are not in sync.
+					if (!wentUp){
+						throw(std::runtime_error("Can't go the way we came?"));
+					}
+					--backtracked;
 				}
+
+				//std::cout << "-------------------------\n";
+
+				// remember if we tried to extend both sides, which we later have to undo
+				//paired = (lchar != -1) && (rchar != -1);
+
+				// search for the pattern provided
+				// one-directional extension rightwards
+				if (lchar == -1) {
+					extension = seqan::goDown(it, rchar, seqan::Rev());
+				}
+				// one-directional extension leftwards
+				else if (rchar == -1) {
+					extension = seqan::goDown(it, lchar, seqan::Fwd());
+				}
+				// bi-directional extension
+				else {
+					bool wentLeft  = seqan::goDown(it, lchar, seqan::Fwd());
+					bool wentRight = seqan::goDown(it, rchar, seqan::Rev());
+
+					// successful if we went both left and right
+					extension = wentLeft && wentRight;
+
+					// if we just followed one direction but not the other - go back
+					if (wentLeft ^ wentRight){
+						seqan::goUp(it);
+					}
+				}
+
+				if (structure_iter.patLen() >= min_match){
+					extension = true;
+					break;
+				}
+
+				//std::cout << " Lala\n";
+
+				//std::cout << "After:  " << seqan::representative(it) << "\n";
 			}
 
-			//std::cout << seqan::representative(it) << "\n";
+			// reset the current search pattern being generated
+			// to prepare for the next invocation of next()
+			/*
+			std::string strString = structure_iter.printPattern();
+			if (!extension){
+				std::cout << strString << " not found. " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+			}
+			else{
+				std::cout << strString << "     found. " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+			}
+			*/
+
+		// repeat until a pattern of sucfficient length was searched for
+		} while (!extension);
+
+		count++;
+
+		backtracked = structure_iter.skip_char();
+		while(backtracked > 0){
+			goUp(it);
+			backtracked--;
 		}
+
+		//std::string strString = structure_iter.printPattern();
+		//std::cout << "Searching for " << strString << " " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+		//std::cout << "Iterator      " << seqan::representative(it) << "\n";
 
 		// check if the minimum length was satisfied
 		// if yes, return true as a hit
@@ -621,35 +777,47 @@ public:
 		std::cout << "\n";
 		*/
 
-		// reset the current search pattern being generated
-		// to prepare for the next invocation of next()
-		structure_iter.skip_char();
-
-		// if we stopped because no next character was found,
-		// we do not have to reset the search iterator
-		if (!extension){
-			return this->next();
-			if (false){
-				std::cout	<< "No pattern    ";
-				if (lchar != -1)
-					std::cout << TBaseAlphabet(lchar);
-
-				std::cout << seqan::representative(it);
-				if (rchar != -1)
-					std::cout << TBaseAlphabet(rchar);
-				std::cout << "\n";
-			}
-
-		}
-		// else we stopped because the minimum length was reached
-		else {
-			//std::cout << "Found pattern (pos " << structure_iter.patPos() << ")" << seqan::representative(it) << " " << seqan::repLength(it) << "\n";
-
-			goUp(it);
-			if (paired){
-				goUp(it);
-			}
-		}
+//		if (extension){
+//			std::string strString = structure_iter.printPattern();
+//			std::cout << "Searching for " << strString << " " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+//		}
+//
+//		// reset the current search pattern being generated
+//		// to prepare for the next invocation of next()
+//		backtracked = structure_iter.skip_char();
+//
+//		// if we stopped because no next character was found,
+//		// we do not have to reset the search iterator
+//		if (!extension){
+//			std::cout << "Recursive \n";
+//			return this->next();
+//			if (false){
+//				std::cout	<< "No pattern    ";
+//				if (lchar != -1)
+//					std::cout << TBaseAlphabet(lchar);
+//
+//				std::cout << seqan::representative(it);
+//				if (rchar != -1)
+//					std::cout << TBaseAlphabet(rchar);
+//				std::cout << "\n";
+//			}
+//
+//		}
+//		// else we stopped because the minimum length was reached
+//		else {
+//			count++;
+//
+//			while(backtracked > 0){
+//				goUp(it);
+//				backtracked--;
+//			}
+//			//std::cout << "Found pattern (pos " << structure_iter.patPos() << ")" << seqan::representative(it) << " " << seqan::repLength(it) << "\n";
+//
+//			//goUp(it);
+//			//if (paired){
+//			//	goUp(it);
+//			//}
+//		}
 
 		return true;
 	}
@@ -679,22 +847,30 @@ public:
 
 //template <typename TBidirectionalIndex>
 //void searchProfile(TBidirectionalIndex &index, TStructure &profile){
-void searchProfile(seqan::StringSet<seqan::String<TBaseAlphabet> > seqs, TStructure profile){
+void searchProfile(seqan::StringSet<seqan::String<TBaseAlphabet> > seqs, TStructure profile, int threshold){
 	typedef seqan::String< TIndexPosType > TOccurenceString;
 
 	TBidirectionalIndex index(seqs);
-	MotifIterator<TBidirectionalIndex> iter(profile, index, 11);
+	MotifIterator<TBidirectionalIndex> iter(profile, index, threshold);
 
 	std::cout << "Searching for " << profile.pos.first << " " << profile.pos.second << "\n";
+
+	if ((profile.pos.second - profile.pos.first + 1) < threshold){
+		std::cout << "Skipping, length " << (profile.pos.second - profile.pos.first + 1) << " shorter than " << threshold << "\n";
+		return;
+	}
+
 	while (iter.next()){
 		TOccurenceString occs = iter.getOccurrences();
-	//	//std::cout << iter.countOccurrences() << "\n";
+		std::cout << iter.countOccurrences() << "\n";
 	}
+
+	std::cout << iter.count << " counted \n";
 }
 
 template <typename TBidirectionalIndex>
 //std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif &motif){
-std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif *motif){
+std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif *motif, int threshold){
 	typedef typename seqan::SAValue<TBidirectionalIndex>::Type THitPair;
 	typedef seqan::String< TIndexPosType > TOccurenceString;
 
@@ -721,9 +897,14 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 
 		std::cout << motif->header.at("AC") << " is being searched..\n";
 
+		if ((structure.pos.second - structure.pos.first + 1) < threshold){
+			std::cout << "Skipping, length " << (structure.pos.second - structure.pos.first + 1) << " shorter than " << threshold << "\n";
+			continue;
+		}
+
 		//std::cout << "ITER\n";
 
-		MotifIterator<TBidirectionalIndex> iter(structure, index, 15);
+		MotifIterator<TBidirectionalIndex> iter(structure, index, threshold);
 
 		unsigned inters = 0;
 		unsigned more1  = 0;
@@ -732,12 +913,20 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 		unsigned pat_count = 0;
 
 		while (iter.next()){
+			//if (pat_count % 1000 == 0){
+			//	std::cout << occ_sum << " " << pat_count << "\n";
+			//}
+
 			++pat_count;
-			TOccurenceString occs = iter.getOccurrences();
+
 			unsigned occ_count = iter.countOccurrences();
+			continue;
+			TOccurenceString occs = iter.getOccurrences();
 			occ_sum += occ_count;
 
 			int pattern_pos = iter.patternPos();
+
+			std::cout << occ_count << "\n";
 
 			for (TIndexPosType pos : occs){
 				TProfileInterval &interval = intervals[pos.i1];
@@ -771,6 +960,8 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 				}
 			}
 		}
+
+		std::cout << "Count " << pat_count << "\n";
 
 		std::cout << "Intervals: " << inters << " " << more1 << "\n";
 		std::cout << "Hits: " << occ_sum << " in " << pat_count << " patterns.\n";
@@ -809,7 +1000,7 @@ void countHits(TProfileInterval positions){
 
 
 template <typename TStringType>
-std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringType> &seqs, std::vector<Motif*> &motifs){
+std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringType> &seqs, std::vector<Motif*> &motifs, int threshold){
 	std::vector<seqan::Tuple<int, 3> > results;
 
 	TBidirectionalIndex index(seqs);
@@ -819,7 +1010,7 @@ std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringTyp
     	// find the locations of the motif matches
     	//std::cout << motif.header.at("AC") << "\n";
     	//std::vector<TProfileInterval> result = getStemloopPositions(index, *motif);
-    	std::vector<TProfileInterval> result = getStemloopPositions(index, motif);
+    	std::vector<TProfileInterval> result = getStemloopPositions(index, motif, threshold);
 
 		// cluster results into areas (i.e. where hairpins of a given type cluster together)
     	//std::cout << result[1].interval_counter << "\n";

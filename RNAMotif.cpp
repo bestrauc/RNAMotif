@@ -121,6 +121,7 @@ struct AppOptions
     // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
     int verbosity;
     int fold_length;
+    int match_len;
     unsigned threads;
     bool constrain;
     bool pseudoknot;
@@ -168,6 +169,8 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     addOption(parser, seqan::ArgParseOption("t", "threads", "Number of threads to use for motif extraction.", seqan::ArgParseOption::INTEGER));
     setDefaultValue(parser, "threads", 1);
 
+    addOption(parser, seqan::ArgParseOption("m", "match-length", "Seed length.", seqan::ArgParseOption::INTEGER));
+
     addOption(parser, seqan::ArgParseOption("ps", "pseudoknot", "Predict structure with IPknot to include pseuoknots."));
     addOption(parser, seqan::ArgParseOption("co", "constrain", "Constrain individual structures with the seed consensus structure."));
     addOption(parser, seqan::ArgParseOption("q", "quiet", "Set verbosity to a minimum."));
@@ -200,6 +203,7 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     seqan::getArgumentValue(options.genome_file, parser, 1);
     getOptionValue(options.fold_length, parser, "max-length");
     getOptionValue(options.threads, parser, "threads");
+    getOptionValue(options.match_len, parser, "match-length");
 
     return seqan::ArgumentParser::PARSE_OK;
 }
@@ -497,39 +501,62 @@ int main(int argc, char const ** argv)
 	//1710720
 	//18475776
 	//20528640
+
 	uint64_t test = 0;
 	while(bla != strucIter.end){
+		//std::cout << test << "\n";
+		int a,b,c;
 		bla = strucIter.get_next_char();
+		//std::tie(a,b,c) = bla;
 
-		if (strucIter.patLen() >= 4){
+		//std::string strString = strucIter.printPattern();
+		//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << " " << a << "\n";
+		//std::cout << "Next: " << strucIter.prof_ptr-.> \n";
+
+		if (strucIter.patLen() >= options.match_len){
 			++test;
 			//std::cout << "Skipping " << strucIter.patLen() << "\n";
-			std::string strString = strucIter.printPattern();
-			std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << "\n";
-			//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << "\n";
-			if (patSet.find(strString) != patSet.end()){
-				std::cout << strString << " already seen?!\n";
-			}
 
-			patSet.insert(strString);
+			//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << "\n";
+			//if (patSet.find(strString) != patSet.end()){
+			//	std::cout << strString << " already seen?!\n";
+			//}
+
+			//patSet.insert(strString);
 
 			//if (!strucIter.full_pattern)
 			strucIter.skip_char();
 		}
+	}
+	std::cout << test << " " << patSet.size() << " SIZE\n";
+
+/*
+	for (auto elem1: motifs[0]->profile[2].elements){
+		std::cout << elem1.type << "\n";
+		int ic = 0;
+		for (auto muhmap : elem1.gap_lengths){
+			std::cout << "Pos " << (ic++) << "\n";
+			for (auto key : muhmap){
+				std::cout << key.first << " - " << key.second << "\n";
+			}
+		}
+
+		std::cout << "\n";
 	}
 
 	std::cout << test << " " << patSet.size() << " SIZE\n";
 
 	std::cout << strucIter.count << "\n";
 	std::cout << strucIter.single << " " << strucIter.paired << "\n";
+	 */
 
 	//for (std::set<std::string>::iterator it=patSet.begin(); it!=patSet.end(); ++it){
 	//	std::cout << *it << "\n";
 	//}
 
-	//searchProfile(seqs, motifs[0]->profile[2]);
+	//searchProfile(seqs, motifs[0]->profile[2], options.match_len);
 
-	//findFamilyMatches(seqs, motifs);
+	findFamilyMatches(seqs, motifs, options.match_len);
 
 	//TStructure &prof1 = motifs[0]->profile[2];
 

@@ -289,7 +289,8 @@ typedef seqan::Index<seqan::StringSet<seqan::String<TBaseAlphabet> >, seqan::Bid
 typedef typename seqan::SAValue<TBidirectionalIndex>::Type TIndexPosType;
 
 // Base Alphabet + gap character for profiles
-typedef seqan::SimpleType<unsigned char, seqan::Finite<seqan::ValueSize<TBaseAlphabet>::VALUE+1> > TAlphabet;
+//typedef seqan::SimpleType<unsigned char, seqan::Finite<seqan::ValueSize<TBaseAlphabet>::VALUE+1> > TAlphabet;
+typedef seqan::SimpleType<unsigned char, seqan::Finite<seqan::ValueSize<TBaseAlphabet>::VALUE> > TAlphabet;
 
 const seqan::ValueSize<TAlphabet>::Type AlphabetSize = seqan::ValueSize<TAlphabet>::VALUE;
 const seqan::BitsPerValue<TAlphabet>::Type AlphabetBitSize = seqan::BitsPerValue<TAlphabet>::VALUE;
@@ -323,6 +324,8 @@ struct StructureElement{
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
 	std::vector<TLoopProfileString> loopComponents;
+	// gaps that can occur at each position of the descriptor
+	std::vector<std::map<int, int> > gap_lengths;
 	TStemProfileString stemProfile;
 
 	// length of the sequence that makes up the structure
@@ -344,6 +347,7 @@ typedef struct ProfileStructure{
 
 	double prob = 0;
 
+	// hairpin, loop, etc. elements of the descriptor
 	std::vector<StructureElement> elements;
 
 	ProfileStructure(BracketType btype, std::pair<int, int> pos)

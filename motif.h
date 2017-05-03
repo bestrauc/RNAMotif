@@ -156,12 +156,15 @@ void bracketToInteractions(const char* structure, TConsensusStructure& interacti
 	}
 }
 
-TLoopProfileString addProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align, bool reverse = false){
+TLoopProfileString addProfile(StructureElement &structureElement, unsigned start, unsigned end, TAlign &align, std::set<int> &excludeSet, bool reverse = false){
 	typedef seqan::Row<TAlign>::Type TRow;
 	typedef typename seqan::Value<TLoopProfileString>::Type TProfileChar;
 
 	TLoopProfileString profileString;
-	seqan::resize(profileString, end-start+1);
+	std::vector<std::map<int, int> > gapString;
+	int n = end-start+1;
+	seqan::resize(profileString, n);
+	seqan::resize(gapString, n);
 	StructureStatistics stats;
 
 	// min and max length initialized with their most extreme possible values
@@ -171,8 +174,11 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
+		if (excludeSet.find(row) != excludeSet.end()){
+			continue;
+		}
+
 		TRow & i_row = seqan::row(align,row);
-		//std::cout << i_row << "\n";
 
 		unsigned source_start = seqan::toSourcePosition(i_row, start);
 		unsigned source_end = seqan::toSourcePosition(i_row, end);
@@ -180,8 +186,16 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 		unsigned seqLength = source_end -  source_start + (1-seqan::isGap(i_row, end));
 
 		// check if we only had gaps in the region (end-start+1 doesn't work then)
-		if (source_start == source_end && seqan::isGap(i_row, end))
+		// remove the whole alignment row in case the hairpin is just a gap
+		if (source_start == source_end && seqan::isGap(i_row, end)){
+			if (structureElement.type == StructureType::HAIRPIN){
+				std::cout << "SKIPPING\n";
+				excludeSet.insert(row);
+				continue;
+			}
+
 			seqLength = 0;
+		}
 
 		// set the statistics (min, max, average lengths)
 		stats.mean_length += seqLength;
@@ -197,15 +211,32 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 
 		unsigned n = seqan::length(profileString);
 
+		int gap_run = 0;
+		int run_start = -1;
+
 		// create profile of bases in this column
 		for (unsigned i=0; i < n; ++i){
 			int index = i+start;
+
+			// store length of gaps at each position
+			if (seqan::isGap(i_row, index)){
+				//std::cout << index << " ";
+				++gap_run;
+				run_start = run_start == -1 ? i : run_start;
+			}
+			else if (gap_run > 0){
+				//std::cout << "Run: " << run_start << " " << gap_run << "\n";
+				//gapString[run_start][gap_run]++;
+				gap_run = 0;
+				run_start = -1;
+			}
+
 			//std::cout << "(" << seqan::ordValue(seqan::row(align, row)[index]) << "," << seqan::row(align, row)[index] << ")" << " ";
 			unsigned ord_val = seqan::ordValue(seqan::row(align, row)[index]);
 
 			// save gaps as last character in alphabet
 			if (ord_val > seqan::ValueSize<TProfileChar>::VALUE){
-				//continue;
+				continue;
 				ord_val = AlphabetSize-1;
 				//std::cout << "Gappé! " << ord_val << "\n";
 			}
@@ -215,8 +246,15 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 			else
 				profileString[i].count[ord_val] += 1;
 		}
+
+		if (gap_run > 0){
+			//std::cout << "Run: " << run_start << " " << gap_run << "\n";
+			//gapString[run_start][gap_run]++;
+		}
 		//std::cout << std::endl;
 	}
+
+	//std::cout << "\n";
 
 	stats.mean_length = stats.mean_length / length(rows(align));
 
@@ -225,38 +263,68 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 
 	structureElement.loopComponents.push_back(profileString);
 	structureElement.statistics.push_back(stats);
+	structureElement.gap_lengths = gapString;
 
 	return profileString;
 }
 
-TStemProfileString addProfile(StructureElement &structureElement, unsigned start1, unsigned end1, unsigned start2, unsigned end2, TAlign &align){
+TStemProfileString addProfile(StructureElement &structureElement, unsigned start1, unsigned end1, unsigned start2, unsigned end2, TAlign &align, std::set<int> &excludeSet){
 
 	typedef typename seqan::Value<TStemProfileString>::Type TProfileChar;
 
 	TStemProfileString profileString;
+	std::vector<std::map<int, int> > gapString;
 	int n = end1-start1+1;
 	seqan::resize(profileString, n);
+	seqan::resize(gapString, n);
 
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
+		// skip row if we excluded it because of gaps that are too large
+		if (excludeSet.find(row) != excludeSet.end()){
+			continue;
+		}
+
 		// create binucleotide profile of bases in the two columns
+		TRow & i_row = seqan::row(align,row);
+		int gap_run = 0;
+		int run_start = -1;
+
 		for (unsigned i=0; i < n; ++i){
 			int l_index = i+start1; // left stem
 			int r_index = end2-i;	// right stem
 
-			unsigned l_ord_val = seqan::ordValue(seqan::row(align, row)[l_index]);
-			unsigned r_ord_val = seqan::ordValue(seqan::row(align, row)[r_index]);
+			// store length of gaps at each position
+			if (seqan::isGap(i_row, l_index) && seqan::isGap(i_row, r_index)){
+				++gap_run;
+				run_start = run_start == -1 ? i : run_start;
+			}
+			else if (gap_run > 0){
+				//gapString[run_start][gap_run]++;
+				gap_run = 0;
+				run_start = -1;
+			}
 
-			if (l_ord_val == AlphabetSize-1 || r_ord_val == AlphabetSize-1){
+			unsigned l_ord_val = seqan::ordValue(i_row[l_index]);
+			unsigned r_ord_val = seqan::ordValue(i_row[r_index]);
+
+			//std::cout << l_ord_val << " " << r_ord_val << "\n";
+
+			if (l_ord_val == AlphabetSize-1 || r_ord_val == AlphabetSize-1 || l_ord_val == 4 || r_ord_val == 4){
 				throw(std::runtime_error("Whaaaaa?"));
 			}
 
 			// if neither character is a gap
 			if (l_ord_val < AlphabetSize && r_ord_val < AlphabetSize){
 				unsigned pair_val = (l_ord_val*AlphabetSize) + r_ord_val;
+				assert((pair_val / AlphabetSize) == l_ord_val);
+				assert((pair_val % AlphabetSize) == r_ord_val);
+
+				//assert(false);
+
 				profileString[n-i-1].count[pair_val] += 1;
 			}
-			///*
+			/*
 			// if both characters are gaps
 			else if (l_ord_val > AlphabetSize && r_ord_val > AlphabetSize){
 				l_ord_val = AlphabetSize-1;
@@ -265,12 +333,17 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 				//std::cout << "Found a stem gap! " << pair_val << "\n";
 				profileString[n-i-1].count[pair_val] += 1;
 			}
+			*/
 			// ignore cases where only one of the sides is a gap (can't deal with those)
-			//*/
+		}
+
+		if (gap_run > 0){
+			//gapString[run_start][gap_run]++;
 		}
 	}
 
 	structureElement.stemProfile = profileString;
+	structureElement.gap_lengths = gapString;
 
 	return profileString;
 }
@@ -398,6 +471,8 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 	TInteractions &consensus = stemStructure.interactions;
 	//TInteractionPairs consensus(motif.consensusStructure);
 
+	std::set<int> excludeSet;
+
 	size_t i = stemStructure.pos.first;
 	do {
 		int pos = i;
@@ -418,9 +493,9 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 					stem.type = STEM;
 					stem.location = i;
-					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment, true);
-					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment);
-					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment);
+					TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment, excludeSet, true);
+					TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment, excludeSet);
+					TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment, excludeSet);
 
 					stemStructure.elements.push_back(stem);
 
@@ -435,7 +510,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 					bulge.type = RBULGE;
 					bulge.location = unpaired+1;
-					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, seedAlignment);
+					TLoopProfileString bulgeProfile = addProfile(bulge, unpaired+1, right-1, seedAlignment, excludeSet);
 					bulge.loopLeft = false;
 					stemStructure.elements.push_back(bulge);
 
@@ -453,9 +528,9 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 			stem.type = STEM;
 			stem.location = i;
-			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment, true);
-			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment);
-			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment);
+			TLoopProfileString leftProfile  = addProfile(stem, i, pos-1, seedAlignment, excludeSet, true);
+			TLoopProfileString rightProfile = addProfile(stem, consensus[pos-1], consensus[i], seedAlignment, excludeSet);
+			TStemProfileString stemProfile  = addProfile(stem, i, pos-1, consensus[pos-1], consensus[i], seedAlignment, excludeSet);
 
 			stemStructure.elements.push_back(stem);
 		}
@@ -477,7 +552,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 				DEBUG_MSG("Left bulge in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = LBULGE;
-				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, seedAlignment, true);
+				TLoopProfileString bulgeProfile = addProfile(structure, pos, run-1, seedAlignment, excludeSet, true);
 				structure.loopLeft = true;
 			}
 			// Hairpin (stop the outer loop here since all structures found)
@@ -485,7 +560,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 				DEBUG_MSG("Hairpin in [" << pos << "," << run-1 << " " << run-pos << "]");
 
 				structure.type = HAIRPIN;
-				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, seedAlignment);
+				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, seedAlignment, excludeSet);
 				std::cout << "HAIRPIN: " << structure.statistics[0].min_length << " Max: " << structure.statistics[0].max_length << "\n";
 				structure.loopLeft = false;
 			}
@@ -494,11 +569,11 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 				DEBUG_MSG("Left loop: [" << pos << "," << run-1 << "]" << " " << run-pos << " ; " << "Right loop: [" << lb+1 << "," << rb-1 << " " << rb-1-lb << "]");
 
 				structure.type = LOOP;
-				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment, true);
-				TStemProfileString loopProfile  = addProfile(structure, pos, run-1, lb+1, rb-1, seedAlignment);
+				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment, excludeSet, true);
+				TStemProfileString loopProfile  = addProfile(structure, pos, run-1, lb+1, rb-1, seedAlignment, excludeSet);
 				structure.loopLeft = true;
-				TLoopProfileString rightProfile = addProfile(structure2, lb+1, rb-1, seedAlignment);
-				TStemProfileString loopProfile2  = addProfile(structure2, pos, run-1, lb+1, rb-1, seedAlignment);
+				TLoopProfileString rightProfile = addProfile(structure2, lb+1, rb-1, seedAlignment, excludeSet);
+				TStemProfileString loopProfile2  = addProfile(structure2, pos, run-1, lb+1, rb-1, seedAlignment, excludeSet);
 				structure2.loopLeft = false;
 
 				//TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment, true);
