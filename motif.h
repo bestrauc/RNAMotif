@@ -174,11 +174,15 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
+		//if (row != 45)
+		//	continue;
+
 		if (excludeSet.find(row) != excludeSet.end()){
 			continue;
 		}
 
 		TRow & i_row = seqan::row(align,row);
+		//std::cout << seqan::infix(i_row, start, end+1) << "\n";
 
 		unsigned source_start = seqan::toSourcePosition(i_row, start);
 		unsigned source_end = seqan::toSourcePosition(i_row, end);
@@ -226,7 +230,7 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 			}
 			else if (gap_run > 0){
 				//std::cout << "Run: " << run_start << " " << gap_run << "\n";
-				//gapString[run_start][gap_run]++;
+				gapString[run_start][gap_run]++;
 				gap_run = 0;
 				run_start = -1;
 			}
@@ -249,7 +253,7 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 
 		if (gap_run > 0){
 			//std::cout << "Run: " << run_start << " " << gap_run << "\n";
-			//gapString[run_start][gap_run]++;
+			gapString[run_start][gap_run]++;
 		}
 		//std::cout << std::endl;
 	}
@@ -280,6 +284,9 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 
 	// store the profile of the alignment in [start,end]
 	for (unsigned row=0; row < length(rows(align)); ++row){
+		//if (row != 45)
+		//	continue;
+
 		// skip row if we excluded it because of gaps that are too large
 		if (excludeSet.find(row) != excludeSet.end()){
 			continue;
@@ -287,6 +294,9 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 
 		// create binucleotide profile of bases in the two columns
 		TRow & i_row = seqan::row(align,row);
+
+		//std::cout << seqan::infix(i_row,  << "\n";
+
 		int gap_run = 0;
 		int run_start = -1;
 
@@ -300,7 +310,7 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 				run_start = run_start == -1 ? i : run_start;
 			}
 			else if (gap_run > 0){
-				//gapString[run_start][gap_run]++;
+				gapString[run_start][gap_run]++;
 				gap_run = 0;
 				run_start = -1;
 			}
@@ -338,7 +348,7 @@ TStemProfileString addProfile(StructureElement &structureElement, unsigned start
 		}
 
 		if (gap_run > 0){
-			//gapString[run_start][gap_run]++;
+			gapString[run_start][gap_run]++;
 		}
 	}
 

@@ -305,6 +305,9 @@ typedef seqan::String<seqan::ProfileChar<TBiAlphabet> > TStemProfileString;
 typedef seqan::IntervalAndCargo<long unsigned int, std::shared_ptr<std::vector<bool> > > TProfileCargo;
 typedef seqan::IntervalTree<long unsigned int, std::shared_ptr<std::vector<bool> >, seqan::StoreIntervals> TProfileInterval;
 
+typedef uint32_t THashType;
+const size_t HashTabLength = 2*1024*1024;
+
 struct StructureStatistics{
 	unsigned min_length;
 	unsigned max_length;

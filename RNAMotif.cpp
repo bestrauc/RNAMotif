@@ -103,6 +103,40 @@ uint64_t GetTimeMs64()
 #endif
 }
 
+int toVal(char c){
+	switch (c) {
+		case 'A':
+			return 0;
+			break;
+		case 'C':
+			return 1;
+			break;
+		case 'G':
+			return 2;
+			break;
+		case 'U':
+			return 3;
+			break;
+		default:
+			break;
+	}
+
+	return 0;
+}
+
+uint64_t hashString(std::string &rnaStr){
+	uint64_t hash = 0;
+
+	for (unsigned i=0; i < rnaStr.size(); ++i){
+		if (rnaStr[i] == '-')
+			continue;
+
+		hash = (hash << 2) + toVal(rnaStr[i]);
+	}
+
+	return hash;
+}
+
 
 // ==========================================================================
 // Classes
@@ -268,29 +302,6 @@ int main(int argc, char const ** argv)
 
     std::cout << records.size() << " records read\n";
     std::cout << "Time: " << GetTimeMs64() - start << "ms \n";
-
-    /*
-    for (auto record: records){
-    	std::string name = record.header.at("AC");
-    	seqan::SeqFileOut fileOut((name+std::string("_") + record.header.at("ID") + std::string(".fasta")).c_str());
-
-    	std::cout << (name+std::string("_") + record.header.at("ID") + std::string(".fasta")) << "\n";
-
-    	typedef seqan::StringSetType<TAlign>::Type TAlignString;
-
-    	TAlignString strSet = seqan::stringSet(record.alignment);
-
-    	for (int i=0; i < seqan::length(strSet); ++i){
-    		seqan::writeRecord(fileOut, record.sequence_names[i], value(strSet,i));
-    		//std::cout << seqan::value(strSet, i) <<"\n";
-    	}
-
-    	seqan::close(fileOut);
-
-    	//for (unsigned row=0; row < length(rows(record.alignment)); ++row){
-
-    }
-    return 0; */
 
 	std::vector<Motif*> motifs(records.size());
 
@@ -498,6 +509,7 @@ int main(int argc, char const ** argv)
 	std::tuple<int, int, int> bla;
 
 	std::set<std::string> patSet;
+	std::unordered_map<std::string, std::vector<std::pair<std::string, std::pair<int, int> > > > stringCollision;
 	//1710720
 	//18475776
 	//20528640
@@ -510,7 +522,8 @@ int main(int argc, char const ** argv)
 		//std::tie(a,b,c) = bla;
 
 		//std::string strString = strucIter.printPattern();
-		//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << " " << a << "\n";
+		//std::cout << strString << " " << a << "\n";
+		//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << " " << strucIter.patHash() << " / " << hashString(strString) << "\n";
 		//std::cout << "Next: " << strucIter.prof_ptr-.> \n";
 
 		if (strucIter.patLen() >= options.match_len){
@@ -518,17 +531,30 @@ int main(int argc, char const ** argv)
 			//std::cout << "Skipping " << strucIter.patLen() << "\n";
 
 			//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << "\n";
-			//if (patSet.find(strString) != patSet.end()){
-			//	std::cout << strString << " already seen?!\n";
-			//}
 
-			//patSet.insert(strString);
+			std::string strString = strucIter.printPattern(false);
+			//stringCollision[strString].push_back(std::make_pair(strucIter.printPattern(), std::make_pair(strucIter.pos, strucIter.element)));
+
+			/*
+			if (patSet.find(strString) != patSet.end()){
+				std::cout <<strString << " already seen?!\n";
+
+				for (int i1=0; i1 < stringCollision[strString].size(); ++i1){
+					std::cout << stringCollision[strString][i1].first << " " << stringCollision[strString][i1].second.first << " - " << stringCollision[strString][i1].second.second << "\n";
+				}
+			}
+			*/
+
+			patSet.insert(strString);
 
 			//if (!strucIter.full_pattern)
 			strucIter.skip_char();
 		}
 	}
+
 	std::cout << test << " " << patSet.size() << " SIZE\n";
+
+	return 0;
 
 /*
 	for (auto elem1: motifs[0]->profile[2].elements){

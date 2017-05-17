@@ -65,12 +65,14 @@ public:
 	int gapsLeft = 0;
 	int offset = 0;
 	int gapsize = 0;
+	THashType seqHash = 0;
 
 	virtual std::pair<int,int> getNextChar() = 0;
 	virtual int nextLength() = 0;
 	virtual int lastChar() = 0;
 	virtual bool atGap() = 0;
 	virtual bool atEnd() = 0;
+	virtual THashType nextHash() = 0;
 	virtual void setEnd() {};
 	virtual ~ProfileCharIter() {};
 };
@@ -88,6 +90,10 @@ public:
 
 	int nextLength(){
 		return -1;
+	}
+
+	THashType nextHash(){
+		return 0;
 	}
 
 	int lastChar(){
@@ -130,7 +136,7 @@ class ProfileCharIterImpl : public ProfileCharIter{
 
 
 public:
-	ProfileCharIterImpl (TProfileChar c, std::map<int, int> &gapMap, int charNum, int charPos, int gapsLeft, int offset, bool left, int threshold=0)
+	ProfileCharIterImpl (TProfileChar c, std::map<int, int> &gapMap, int charNum, int charPos, int gapsLeft, int offset, THashType prev_hash, bool left, int threshold=0)
 							: c(c), idx(char_size), total(seqan::totalCount(c)){
 		this->charNum = charNum;
 		this->charPos = charPos;
@@ -138,6 +144,7 @@ public:
 		this->gapsLeft = gapsLeft;
 		this->offset = offset;
 		this->threshold = threshold;
+		this->seqHash = prev_hash;
 
 		// fill index vector with indies [0,1,..,N-1]
 		std::iota(idx.begin(), idx.end(), 0);
@@ -202,6 +209,39 @@ public:
 		return (this->charNum + 1 + std::is_same<TProfileChar, TBiAlphabetProfile>::value);
 	}
 
+	THashType nextHash(){
+		if (this->at_gap){
+			return this->seqHash;
+		}
+
+		THashType next_hash = this->seqHash;
+
+		int last_char = lastChar();
+		int lchar, rchar;
+		if (std::is_same<TProfileChar, TBiAlphabetProfile>::value){
+			//std::cout << "Double\t";
+			lchar = last_char / AlphabetSize;
+			rchar = last_char % AlphabetSize;
+		}
+		else{
+			//std::cout << "Single\t";
+			lchar = this->left ? last_char : -1;
+			rchar = this->left ? -1 : last_char;
+		}
+
+		if (lchar != -1){
+			next_hash = (lchar << (2*this->charNum)) + next_hash;
+		}
+
+		if (rchar != -1){
+			next_hash = next_hash*4 + rchar;
+		}
+
+		//std::cout << this->seqHash << " - " << lchar << " " << rchar << " - " << next_hash << "\n";
+
+		return next_hash;
+	}
+
 	int lastChar(){
 		return TProfileAlphabet(idx[state-1]);
 	}
@@ -222,14 +262,39 @@ public:
 	}
 };
 
+template <class T>
+inline void hash_combine(std::size_t & seed, const T & v)
+{
+  std::hash<T> hasher;
+  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+namespace std
+{
+  template<typename S, typename T> struct hash<pair<S, T>>
+  {
+    inline size_t operator()(const pair<S, T> & v) const
+    {
+      size_t seed = 0;
+      ::hash_combine(seed, v.first);
+      ::hash_combine(seed, v.second);
+      return seed;
+    }
+  };
+}
+
 class StructureIterator{
-private:
+public:
 	typedef ProfileCharIterImpl<TAlphabetProfile> TSinglePointer;
 	typedef ProfileCharIterImpl<TBiAlphabetProfile> TPairPointer;
 	typedef std::shared_ptr<ProfileCharIter> ProfilePointer;
 
 	int total_length = 0;
-	std::vector<int> cumulative_lens;
+	typedef std::pair<uint8_t, THashType> TPosHashPair;
+	typedef std::vector<TPosHashPair> TPairArray;
+	std::vector<std::vector<TPairArray> > prefix_states;
+
+	//std::vector<std::vector<std::unordered_map<std::pair<uint8_t, THashType>, bool> > > prefix_states;
 	std::vector<StructureElement> structure_elements;
 
 	int element;
@@ -240,15 +305,11 @@ private:
 
 	// return the profile pointer of the profile
 	// that corresponds to position pos
-	ProfilePointer next_profile(int offset){
+	ProfilePointer next_profile(int offset, bool &duplicate){
 		int next_pos  = prof_ptr->charPos;
 		int last_gaps = prof_ptr->gapsLeft;
 
 		bool changed = false;
-
-		//std::cout << element << " " << pos << "\n";
-
-		//std::cout << "Before " << last_gaps << " " << offset << "\n";
 
 		for (int i=0; i < offset; ++i){
 			// advance in the structure elements if possible
@@ -266,6 +327,7 @@ private:
 			// else return empty profile pointer as an end marker
 			else {
 				//std::cout << "AT ENEDEDEDD\n";
+				duplicate = false;
 				return ProfilePointer(new ProfileIterEmpty(i, prof_ptr->nextLength()));
 			}
 
@@ -290,6 +352,7 @@ private:
 									  next_pos,
 									  last_gaps,
 									  offset,
+									  prof_ptr->nextHash(),
 									  false));
 		}
 		else {
@@ -299,19 +362,39 @@ private:
 									  next_pos,
 									  last_gaps,
 									  offset,
+									  prof_ptr->nextHash(),
 									  structure_elements[element].loopLeft));
 		}
 
-		//std::cout << "new: " << next_ptr->charNum << "\n";
+		TPosHashPair hash_pair = std::make_pair(next_ptr->charNum, next_ptr->seqHash);
 
-		//std::cout << element << " " << pos << "\n";
+		//std::cout << "\n";
+
+
+		size_t prefix_key = std::hash<TPosHashPair>()(hash_pair);
+
+		if (prefix_states[element][pos][(prefix_key % HashTabLength)] != hash_pair){
+			//std::cout << this->printPattern() << "\tno duplicate at " << element << " " << pos << prefix_key <<  "\n";
+			//std::cout << (int)prefix_states[element][pos][prefix_key % HashTabLength].first << "," << prefix_states[element][pos][prefix_key % HashTabLength].second << " " << (int)hash_pair.first << "," << hash_pair.second << "\n";
+		//if (prefix_states[element][pos][hash_pair] == false){
+		//	prefix_states[element][pos][hash_pair] = true;
+			prefix_states[element][pos][prefix_key % HashTabLength] = hash_pair;
+			duplicate = false;
+
+		}
+		else{
+			duplicate = true;
+			//std::cout << this->printPattern() << "\t   duplicate at " << element << " " << pos << " " << prefix_key << "\n";
+		}
+
+//		duplicate = false;
 
 		return next_ptr;
 	}
 
 	// get next profile pointer position
-	ProfilePointer next_profile(){
-		return this->next_profile(1);
+	ProfilePointer next_profile(bool &duplicate){
+		return this->next_profile(1, duplicate);
 	}
 
 	bool is_initial_state(){
@@ -325,9 +408,6 @@ private:
 	std::pair<int, ProfilePointer> prev_profile(){
 		//std::cout << "Removing " << (typeid(*prof_ptr) == typeid(TSinglePointer) ? "Single" : "Double") << " - " << prof_ptr->offset << " " << prof_ptr->charNum << "\n";
 		std::pair<int, ProfilePointer> ret = {0, state.top()};
-		//std::cout << "Next " << (typeid(*next_ptr) == typeid(TSinglePointer) ? "Single" : "Double") << " - " << next_ptr->offset << " " << next_ptr->charNum << "\n";
-
-		//std::cout << "OFFSET: " << prof_ptr->offset << "\n";
 
 		// decrement position in the motif
 		//std::cout << "Resetting offset " << prof_ptr->offset << "\n";
@@ -342,8 +422,6 @@ private:
 			}
 		}
 
-		//std::cout << element << " " << pos << "\n";
-
 		// backtrack 1 character for unidirectional char, 2 for bidirectional
 		// do not backtrack if we popped a gap character (since the iterator will have ignored it)
 
@@ -356,7 +434,7 @@ private:
 		return ret;
 	}
 
-public:
+//public:
 	//bool full_pattern = false;
 	uint64_t single = 0, paired = 0;
 	uint64_t count;
@@ -374,7 +452,11 @@ public:
 		uint64_t sum = 1;
 		if (true){
 			for (StructureElement elem : structure_elements){
-				for (int i=0; i < seqan::length(elem.loopComponents[0]); ++i){
+				int elem_len = seqan::length(elem.loopComponents[0]);
+				//prefix_states.push_back(std::vector<std::unordered_map<std::pair<uint8_t, THashType>, bool> >(elem_len));
+				prefix_states.push_back(std::vector<TPairArray>(elem_len, TPairArray(HashTabLength, TPosHashPair(255,0))));
+
+				for (int i=0; i < elem_len; ++i){
 					int nonzero = 0;
 
 					if (elem.type != StructureType::STEM){
@@ -409,7 +491,7 @@ public:
 
 		prof_ptr = ProfilePointer(new TSinglePointer(hairpin[pos], structure_elements[element].gap_lengths[pos], 0,
 								  this->intital_pos, this->elem_length-structure_elements[element].statistics[0].min_length,
-								  1, false));
+								  1, 0, false));
 
 		//std::cout << "INIT gaps " << elem_length << " " << structure_elements[element].statistics[0].min_length << " " << structure_elements[element].statistics[0].max_length << "\n";
 	}
@@ -452,17 +534,32 @@ public:
 		if (skip_count > 0){
 			//std::cout << "Skipping gap of length " << skip_count << " " << prof_ptr->charNum << " " << prof_ptr->nextLength() << " " << state.size() << "\n";
 
-			prof_ptr = this->next_profile(skip_count);
+			bool duplicate;
+			prof_ptr = this->next_profile(skip_count, duplicate);
+			if (duplicate){
+				skip_char();
+			}
+
 			return get_next_char(backtracked);
 		}
 
+		bool single_type = typeid(*prof_ptr) == typeid(TSinglePointer);
+
+		bool duplicate;
+		prof_ptr = this->next_profile(duplicate);
+
+		if (duplicate){
+			skip_char();
+			return get_next_char();
+		}
 
 		// return one or two characters to search, depending on the substructure
-		if (typeid(*prof_ptr) == typeid(TSinglePointer)){
+		if (single_type){
 			//std::cout << "Single\n";
 			++single;
 
 			if (structure_elements[element].loopLeft == false){
+			//if (prof_ptr->left){
 				ret = std::make_tuple(backtracked, -1, next_char_val);
 			}
 			else {
@@ -477,8 +574,8 @@ public:
 
 			ret = std::make_tuple(backtracked, lchar, rchar);
 		}
+		// if the prefix was already seen, skip profile
 
-		prof_ptr = this->next_profile();
 
 		return ret;
 	}
@@ -494,6 +591,27 @@ public:
 		return prof_ptr->charNum;
 	}
 
+	uint64_t patHash(){
+		//if (full_pattern)			return prof_ptr->charNum;
+
+		//return state.empty() ? 0 : state.top()->charNum;
+		return prof_ptr->seqHash;
+	}
+
+	std::string prevHash(){
+		//if (full_pattern)			return prof_ptr->charNum;
+
+		std::stringstream ss;
+		auto stackCopy = state;
+		while (!stackCopy.empty()){
+			auto top = stackCopy.top();
+			stackCopy.pop();
+			ss << top->seqHash << " ";
+		}
+
+		return ss.str();
+	}
+
 	int patPos(){
 		//if (full_pattern)		return prof_ptr->charPos;
 
@@ -501,7 +619,7 @@ public:
 	}
 
 	// print the current pattern
-	std::string printPattern(){
+	std::string printPattern(bool printGaps = true){
 		std::stack<ProfilePointer> stateCopy = state;
 		std::stringstream ss;
 
@@ -528,15 +646,33 @@ public:
 
 				//if (cur_char_val == AlphabetSize-1){
 				if (tmpptr->atGap()){
-					//continue;
+					if (!printGaps)
+						continue;
+
+					if (tmpptr->left){
+						ss << '|';
+					}
+					else{
+						rightPrint.push('|');
+					}
+
 					for (int i=0; i < tmpptr->gapsize; ++i){
 						//std::cout << "Offset: " << tmpptr->offset << "\n";
-						if (tmpptr->left)
+						if (tmpptr->left){
 							ss << '-';
-						else
+						}
+						else{
 							rightPrint.push('-');
+						}
 					}
-						//cur_print_char = '-';
+
+					if (tmpptr->left){
+						ss << '|';
+					}
+					else{
+						rightPrint.push('|');
+					}
+
 					continue;
 					//std::cout << "Waaaa\n";
 				}
@@ -566,11 +702,20 @@ public:
 
 				//if (lchar == AlphabetSize-1 || rchar == AlphabetSize-1){
 				if (tmpptr->atGap()){
-					//continue;
+					if (!printGaps)
+						continue;
+
+					ss << '|';
+					rightPrint.push('|');
+
 					for (int i=0; i < tmpptr->offset; ++i){
 						ss << '-';
 						rightPrint.push('-');
 					}
+
+					ss << '|';
+					rightPrint.push('|');
+
 					//lprint_char = '-';
 					//rprint_char = '-';
 					//std::cout << "Wuuuu\n";
@@ -628,6 +773,7 @@ class MotifIterator{
 	StructureIterator structure_iter;
 	TIterator it;
 	bool cont = true;
+	bool first = true;
 
 	// threshold: stop expanding when below this likelihood for the sequence
 	unsigned min_match;
@@ -647,6 +793,10 @@ public:
 		return this->structure_iter.patPos();
 	}
 
+	auto printRep(){
+		return seqan::representative(it);
+	}
+
 	// next() returns true as long as the motif is not exhausted.
 	// Only 'valid' matches are iterated: exclude those who do not match
 	// or do not represent the family well (prob. below threshold)
@@ -658,7 +808,19 @@ public:
 		bool extension = true;
 		int backtracked, lchar, rchar;
 
+		if (!first){
+			backtracked = structure_iter.skip_char();
+			while(backtracked > 0){
+				goUp(it);
+				backtracked--;
+			}
+		}
+
+		first = false;
+
 		do {
+			extension = true;
+
 			// search until the pattern cannot be extended further
 			// or the required seed length has been reached.
 			while (extension && seqan::repLength(it) < min_match){
@@ -723,10 +885,10 @@ public:
 					}
 				}
 
-				if (structure_iter.patLen() >= min_match){
-					extension = true;
-					break;
-				}
+				//if (structure_iter.patLen() >= min_match){
+				////	extension = true;
+				//	break;
+				//}
 
 				//std::cout << " Lala\n";
 
@@ -735,101 +897,33 @@ public:
 
 			// reset the current search pattern being generated
 			// to prepare for the next invocation of next()
-			/*
-			std::string strString = structure_iter.printPattern();
+
+			//std::string strString = structure_iter.printPattern();
 			if (!extension){
-				std::cout << strString << " not found. " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+				//std::cout << strString << " not found. " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+				structure_iter.skip_char();
 			}
 			else{
-				std::cout << strString << "     found. " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
+				//std::cout << strString << "     found. " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
 			}
-			*/
 
 		// repeat until a pattern of sucfficient length was searched for
 		} while (!extension);
 
 		count++;
 
-		backtracked = structure_iter.skip_char();
-		while(backtracked > 0){
-			goUp(it);
-			backtracked--;
-		}
-
-		//std::string strString = structure_iter.printPattern();
-		//std::cout << "Searching for " << strString << " " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
-		//std::cout << "Iterator      " << seqan::representative(it) << "\n";
-
-		// check if the minimum length was satisfied
-		// if yes, return true as a hit
-		// else, try to extend a different pattern
-
-		/*
-		int bla = structure_iter.patLen();
-
-		std::stack<StructureIterator::ProfilePointer> stateCopy = structure_iter.state;
-
-		while (!stateCopy.empty()){
-			std::cout << (int)stateCopy.top()->atEnd();
-			stateCopy.pop();
-		}
-
-		std::cout << "\n";
-		*/
-
-//		if (extension){
-//			std::string strString = structure_iter.printPattern();
-//			std::cout << "Searching for " << strString << " " << structure_iter.patPos() << " " << structure_iter.patLen() << "\n";
-//		}
-//
-//		// reset the current search pattern being generated
-//		// to prepare for the next invocation of next()
-//		backtracked = structure_iter.skip_char();
-//
-//		// if we stopped because no next character was found,
-//		// we do not have to reset the search iterator
-//		if (!extension){
-//			std::cout << "Recursive \n";
-//			return this->next();
-//			if (false){
-//				std::cout	<< "No pattern    ";
-//				if (lchar != -1)
-//					std::cout << TBaseAlphabet(lchar);
-//
-//				std::cout << seqan::representative(it);
-//				if (rchar != -1)
-//					std::cout << TBaseAlphabet(rchar);
-//				std::cout << "\n";
-//			}
-//
-//		}
-//		// else we stopped because the minimum length was reached
-//		else {
-//			count++;
-//
-//			while(backtracked > 0){
-//				goUp(it);
-//				backtracked--;
-//			}
-//			//std::cout << "Found pattern (pos " << structure_iter.patPos() << ")" << seqan::representative(it) << " " << seqan::repLength(it) << "\n";
-//
-//			//goUp(it);
-//			//if (paired){
-//			//	goUp(it);
-//			//}
-//		}
-
 		return true;
 	}
 
-	TOccurenceString getOccurrences(){
+	auto getOccurrences(){
 		// FIXME: getting occurrences directly via
 		// occs = seqan::getOccurrences(it) doesn't work for some reason
-		TOccurenceString occs;
-		for (THitPair test: seqan::getOccurrences(it))
-			seqan::appendValue(occs, test);
+		//TOccurenceString occs = seqan::getOccurrences(it);
+		//auto tests = seqan::getOccurrences(it);
+		//for (THitPair test: seqan::getOccurrences(it))
+			//seqan::appendValue(occs, test);
 
-		return occs;
+		return seqan::getOccurrences(it);
 	}
 
 	unsigned countOccurrences(){
@@ -861,7 +955,7 @@ void searchProfile(seqan::StringSet<seqan::String<TBaseAlphabet> > seqs, TStruct
 	}
 
 	while (iter.next()){
-		TOccurenceString occs = iter.getOccurrences();
+		auto occs = iter.getOccurrences();
 		std::cout << iter.countOccurrences() << "\n";
 	}
 
@@ -869,18 +963,29 @@ void searchProfile(seqan::StringSet<seqan::String<TBaseAlphabet> > seqs, TStruct
 }
 
 template <typename TBidirectionalIndex>
-//std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif &motif){
-std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif *motif, int threshold){
+//std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, Motif *motif, int threshold){
+std::vector<std::vector<std::vector<bool> > > getStemloopPositions(TBidirectionalIndex &index, Motif *motif, int threshold){
 	typedef typename seqan::SAValue<TBidirectionalIndex>::Type THitPair;
 	typedef seqan::String< TIndexPosType > TOccurenceString;
+
+	int n_refs   = seqan::length(seqan::indexText(index));
+	int n_strucs = motif->profile.size();
 
 	//std::vector<TOccurenceString> result(profile.size());
 
 	// create one interval tree for each contig in the reference genome
 	std::vector<TProfileInterval> intervals(seqan::countSequences(index));
+	std::vector<std::vector<std::vector<bool> > > pos_hits;
 	//std::vector<TProfileInterval> intervals;
 
-	std::cout << "INIT\n";
+	std::cout << "INIT " << " " << n_refs << "\n";
+	auto indText = seqan::indexText(index);
+
+
+	for (int i=0; i < seqan::length(indText); ++i){
+		int textLen = seqan::length(seqan::value(indText, i));
+		pos_hits.push_back(std::vector<std::vector<bool> >(textLen, std::vector<bool>(n_strucs)));
+	}
 
 	int id = 0;
 	//int n = seqan::length(motif->seedAlignment);
@@ -889,7 +994,7 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 	int stems = motif->profile.size();
 
 	// tolerance for the seach window to account for novel inserts
-	int const eps = 10;
+	int const eps = 5;
 
 	for (TStructure &structure : motif->profile){
 		// start of the hairpin in the whole sequence
@@ -899,6 +1004,7 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 
 		if ((structure.pos.second - structure.pos.first + 1) < threshold){
 			std::cout << "Skipping, length " << (structure.pos.second - structure.pos.first + 1) << " shorter than " << threshold << "\n";
+			++id;
 			continue;
 		}
 
@@ -920,17 +1026,27 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 			++pat_count;
 
 			unsigned occ_count = iter.countOccurrences();
-			continue;
-			TOccurenceString occs = iter.getOccurrences();
+			auto occs = iter.getOccurrences();
 			occ_sum += occ_count;
 
 			int pattern_pos = iter.patternPos();
 
-			std::cout << occ_count << "\n";
+			//continue;
+			//std::cout << iter.printRep() << " " << occ_count << "\n";
+			//for (TIndexPosType pos : occs){
+			for (int i=0; i < seqan::length(occs); ++i){
+				const TIndexPosType &pos = seqan::value(occs, i);
 
-			for (TIndexPosType pos : occs){
+				//continue;
+				//std::cout << pos.i2 << " " << pattern_pos << "\n";
+				// count a match at this position
+				int index = (pos.i2 >= pattern_pos) ? (pos.i2 - pattern_pos) : 0;
+				pos_hits[pos.i1][index][id] = true;
+				//}
+				//else	std::cout << "Smaller?!\n";
+
+				/*
 				TProfileInterval &interval = intervals[pos.i1];
-
 				seqan::String<TProfileCargo> hits;
 
 				// check if the stem occurs in an already existing match region
@@ -947,8 +1063,13 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 					// add an interval around the matched stem
 					//std::cout << "Adding interval from " << (pos.i2 - (  pattern_pos) - eps) << " to " << (pos.i2 + (n-pattern_pos) + eps) << "\n";
 					//std::cout << "(Match: " << pos.i2 << " " << pattern_pos << ")" << "\t" << (pos.i2 - pattern_pos) << " " << (pos.i2 + (n-pattern_pos)) << "\n";
-					seqan::addInterval(interval, pos.i2 - (  pattern_pos) - eps,
-												 pos.i2 + (n-pattern_pos) + eps, stemSet);
+					const long unsigned int left  = (pos.i2 < (pattern_pos + eps)) ? 0 : (pos.i2 - (  pattern_pos) - eps);
+					const long unsigned int right = pos.i2 + (n-pattern_pos) + eps;
+
+					//std::cout << left << " (" << pos.i2 << " " << pos.i2 + n-pattern_pos << " )" << " " << right << "\n";
+
+					//seqan::addInterval(interval, pos.i2 - (  pattern_pos) - eps, pos.i2 + (n-pattern_pos) + eps, stemSet);
+					seqan::addInterval(interval, left, right, stemSet);
 				}
 				// else add to the list of hits
 				else{
@@ -958,23 +1079,26 @@ std::vector<TProfileInterval> getStemloopPositions(TBidirectionalIndex &index, M
 						(*hits[i].cargo)[id] = true;
 					}
 				}
+				*/
 			}
 		}
 
-		std::cout << "Count " << pat_count << "\n";
+		//std::cout << "Count " << pat_count << " - " << occ_sum << " / " << (double)occ_sum / (double)pat_count << "\n";
+		/*
 
 		std::cout << "Intervals: " << inters << " " << more1 << "\n";
 		std::cout << "Hits: " << occ_sum << " in " << pat_count << " patterns.\n";
 
 		for (unsigned i=0; i < seqan::countSequences(index); ++i)
 			std::cout << "After " << id << "," << i << ": " << intervals[i].interval_counter << "\n";
+		*/
 
-		//std::cout << seqan::length(result[id]) << "\n";
-		//seqan::sort(result[id]);
+		//for (unsigned i=0; i < seqan::countSequences(index); ++i)
+		//	std::cout << "After " << id << "," << i << ": " << std::accumulate(pos_hits[i].begin(), pos_hits[i].end(), 0) << "\n";
 		++id;
 	}
 
-	return intervals;
+	return pos_hits;
 }
 
 void countHits(TProfileInterval positions){
@@ -998,6 +1122,70 @@ void countHits(TProfileInterval positions){
 	}
 }
 
+template<typename T>
+std::ostream & operator<<(std::ostream & os, std::vector<T> vec)
+{
+    os<<"{ ";
+    std::copy(vec.begin(), vec.end(), std::ostream_iterator<T>(os, " "));
+    os<<"}";
+    return os;
+}
+
+// scan the hit count vector with a sliding window
+void countHits(std::vector<std::vector<bool> > hits, int aln_len){
+	int hitsize = hits[0].size();
+	int n = hits.size();
+	std::vector<int> state(hitsize);
+
+	//std::cout << hits.size() << " " << (aln_len+1) << " " << ((int)hits.size() - aln_len +1) << "--- \n";
+
+	//int end = ((int)hits.size()-aln_len+1);
+
+	int window_start = -1;
+
+	// scan over the hits with a window of length aln_len
+	for (int i=0; i < n; ++i){
+		//std::cout << hits[i] << "\n";
+		//std::cout << state << " " << i << "\n";
+
+		// remove the contribution of the position that dropped from the window
+		if (i >= aln_len){
+			int hitsum = std::accumulate(state.begin(), state.end(), 0, [](int a, int b){return a + (b > 0);});
+			//std::cout << hitsum << "\n";
+			// first check whether the current window had sufficient matches
+			if (hitsum > hitsize/2){
+				//std::cout << state << " - " << i << "\n";
+				if (window_start == -1){
+					std::cout << "Window started at " << i - aln_len << "\n";
+					window_start = i-aln_len;
+				}
+
+			}
+			else if (window_start != -1){
+				std::cout << "Windows ended at " << (i-1) << "\n";
+				std::cout << window_start << " " << (i-1) << "\n";
+				window_start = -1;
+			}
+
+			for (int j=0; j < hitsize; ++j){
+				state[j] -= hits[i-aln_len][j];
+			}
+		}
+
+		// update matches in the window in a sliding fashion
+		for (int j=0; j < hitsize; ++j){
+			state[j] += hits[i][j];
+		}
+	}
+
+	int hitsum = std::accumulate(state.begin(), state.end(), 0, [](int a, int b){return a + (b > 0);});
+	//std::cout << hitsum << "\n";
+	// first check whether the current window had sufficient matches
+	if (hitsum > hitsize/2){
+		std::cout << std::max(0, n-aln_len) << " " << n-1 << "\n";
+	}
+}
+
 
 template <typename TStringType>
 std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringType> &seqs, std::vector<Motif*> &motifs, int threshold){
@@ -1007,18 +1195,22 @@ std::vector<seqan::Tuple<int, 3> > findFamilyMatches(seqan::StringSet<TStringTyp
 
     for (Motif *motif : motifs){
     	std::cout << motif->header.at("ID") << "\n";
+
+    	//std::cout << motif->seedAlignment << "\n";
+
     	// find the locations of the motif matches
     	//std::cout << motif.header.at("AC") << "\n";
-    	//std::vector<TProfileInterval> result = getStemloopPositions(index, *motif);
-    	std::vector<TProfileInterval> result = getStemloopPositions(index, motif, threshold);
+    	//std::vector<TProfileInterval> result = getStemloopPositions(index, motif, threshold);
+    	int aln_len = seqan::length(seqan::row(motif->seedAlignment,0));
+    	std::vector<std::vector<std::vector<bool> > > result = getStemloopPositions(index, motif, threshold);
 
 		// cluster results into areas (i.e. where hairpins of a given type cluster together)
     	//std::cout << result[1].interval_counter << "\n";
     	//countHits(result[1], motif.consensusStructure.size());
     	int id = 1;
-    	for (TProfileInterval intervals : result){
+    	for (auto region : result){
     		std::cout << "rmark" << id++ << "\n";
-    		countHits(intervals);
+    		countHits(region, aln_len);
     	}
     }
 
