@@ -293,11 +293,13 @@ public:
 	typedef std::pair<uint8_t, THashType> TPosHashPair;
 	typedef std::vector<TPosHashPair> TPairArray;
 	std::vector<std::vector<TPairArray> > prefix_states;
+	std::unordered_map<THashType, bool> end_state;
 
 	//std::vector<std::vector<std::unordered_map<std::pair<uint8_t, THashType>, bool> > > prefix_states;
 	std::vector<StructureElement> structure_elements;
 
 	int element;
+	int max_length;
 	int elem_length;
 	int pos;
 	int intital_pos;
@@ -366,28 +368,23 @@ public:
 									  structure_elements[element].loopLeft));
 		}
 
-		TPosHashPair hash_pair = std::make_pair(next_ptr->charNum, next_ptr->seqHash);
 
 		//std::cout << "\n";
-
-
-		size_t prefix_key = std::hash<TPosHashPair>()(hash_pair);
-
-		if (prefix_states[element][pos][(prefix_key % HashTabLength)] != hash_pair){
-			//std::cout << this->printPattern() << "\tno duplicate at " << element << " " << pos << prefix_key <<  "\n";
-			//std::cout << (int)prefix_states[element][pos][prefix_key % HashTabLength].first << "," << prefix_states[element][pos][prefix_key % HashTabLength].second << " " << (int)hash_pair.first << "," << hash_pair.second << "\n";
 		//if (prefix_states[element][pos][hash_pair] == false){
 		//	prefix_states[element][pos][hash_pair] = true;
+
+		TPosHashPair hash_pair = std::make_pair(next_ptr->charNum, next_ptr->seqHash);
+		size_t prefix_key = std::hash<TPosHashPair>()(hash_pair);
+		if (prefix_states[element][pos][(prefix_key % HashTabLength)] != hash_pair){
 			prefix_states[element][pos][prefix_key % HashTabLength] = hash_pair;
 			duplicate = false;
-
 		}
 		else{
 			duplicate = true;
 			//std::cout << this->printPattern() << "\t   duplicate at " << element << " " << pos << " " << prefix_key << "\n";
 		}
 
-//		duplicate = false;
+		//duplicate = false;
 
 		return next_ptr;
 	}
@@ -442,8 +439,8 @@ public:
 	std::stack<ProfilePointer> state;
 	std::tuple<int, int, int> end;
 
-	StructureIterator(std::vector<StructureElement> &structure_elements)
-		: structure_elements(structure_elements), end(-1,-1,-1) {
+	StructureIterator(std::vector<StructureElement> &structure_elements, int length)
+		: structure_elements(structure_elements), max_length(length), end(-1,-1,-1) {
 		//for (StructureElement elem : structure_elements){
 		//	cumulative_lens.push_back(total_length);
 		//	total_length += seqan::length(elem.loopComponents[0]);
@@ -496,62 +493,8 @@ public:
 		//std::cout << "INIT gaps " << elem_length << " " << structure_elements[element].statistics[0].min_length << " " << structure_elements[element].statistics[0].max_length << "\n";
 	}
 
-	std::tuple<int, int, int> get_next_char(int backtrack=0){
+	std::tuple<int, int, int> make_return_char(int next_char_val, int backtracked, bool single_type){
 		std::tuple<int, int, int> ret;
-
-		int backtracked = backtrack;
-
-		//std::cout << prof_ptr->atEnd() << "\n";
-
-		// get previous state (backtrack to valid state if necessary)
-		while (prof_ptr->atEnd()) {
-			//std::cout << "At End\n";
-
-//			// if no more characters can be generated
-			if (is_initial_state()){
-				return this->end;
-			}
-
-			//std::cout << "Backtracking\n";
-
-			int tmp_back;
-			std::tie(tmp_back, prof_ptr) = this->prev_profile();
-			backtracked += tmp_back;
-
-			//std::cout << backtracked << "\n";
-		}
-
-		//std::cout << prof_ptr->charNum << " num -- \n";
-
-		// advance to the next character in the active state
-		int skip_count, next_char_val;
-		std::tie(skip_count, next_char_val) = prof_ptr->getNextChar();
-
-		// save state of advanced pointer
-		state.push(prof_ptr); // save last character state
-
-		// if we are at a gap, skip the gap to the next character
-		if (skip_count > 0){
-			//std::cout << "Skipping gap of length " << skip_count << " " << prof_ptr->charNum << " " << prof_ptr->nextLength() << " " << state.size() << "\n";
-
-			bool duplicate;
-			prof_ptr = this->next_profile(skip_count, duplicate);
-			if (duplicate){
-				skip_char();
-			}
-
-			return get_next_char(backtracked);
-		}
-
-		bool single_type = typeid(*prof_ptr) == typeid(TSinglePointer);
-
-		bool duplicate;
-		prof_ptr = this->next_profile(duplicate);
-
-		if (duplicate){
-			skip_char();
-			return get_next_char();
-		}
 
 		// return one or two characters to search, depending on the substructure
 		if (single_type){
@@ -574,10 +517,93 @@ public:
 
 			ret = std::make_tuple(backtracked, lchar, rchar);
 		}
-		// if the prefix was already seen, skip profile
-
 
 		return ret;
+	}
+
+	std::tuple<int, int, int> get_next_char(int backtrack=0){
+		std::tuple<int, int, int> ret;
+
+		int next_char_val, backtracked = backtrack;
+		bool single_type;
+
+		if (this->patLen() >= this->max_length){
+			skip_char();
+		}
+
+		//std::cout << prof_ptr->atEnd() << "\n";
+
+		bool char_extension = false;
+		while (!char_extension){
+			char_extension = true;
+
+			// get previous state (backtrack to valid state if necessary)
+			while (prof_ptr->atEnd()) {
+				//std::cout << "At End\n";
+
+				// if no more characters can be generated
+				if (is_initial_state()){
+					return this->end;
+				}
+
+				//std::cout << "Backtracking\n";
+
+				int tmp_back;
+				std::tie(tmp_back, prof_ptr) = this->prev_profile();
+				backtracked += tmp_back;
+
+				//std::cout << backtracked << "\n";
+			}
+
+			// advance to the next character in the active state
+			int skip_count;
+			std::tie(skip_count, next_char_val) = prof_ptr->getNextChar();
+
+			// save state of advanced pointer
+			state.push(prof_ptr); // save last character state
+
+			// if we are at a gap, skip the gap to the next character
+			if (skip_count > 0){
+				//std::cout << "Skipping gap of length " << skip_count << " " << prof_ptr->charNum << " " << prof_ptr->nextLength() << " " << state.size() << "\n";
+
+				bool duplicate;
+				prof_ptr = this->next_profile(skip_count, duplicate);
+				if (duplicate){
+					skip_char();
+				}
+
+				return get_next_char(backtracked);
+			}
+
+			single_type = typeid(*prof_ptr) == typeid(TSinglePointer);
+
+			bool duplicate;
+			prof_ptr = this->next_profile(duplicate);
+
+			if (duplicate){
+				skip_char();
+				char_extension = false;
+				//return get_next_char();
+			}
+
+			// check if the target length has been reached
+			// if so, exclude duplicates again
+			if (false)
+				if (this->patLen() >= this->max_length){
+					THashType end_hash = prof_ptr->nextHash();
+
+					// skip
+					if (end_state[end_hash]){
+						skip_char();
+						return get_next_char();
+					}
+					else{
+						end_state[end_hash] = true;
+					}
+				}
+		}
+
+		return make_return_char(next_char_val, backtracked, single_type);
 	}
 
 	bool at_char_end(){
@@ -786,7 +812,7 @@ public:
 	unsigned count = 0;
 
 	MotifIterator(TStructure &structure, TBidirectionalIndex &index, double min_match)
-		: structure_iter(structure.elements), it(index), min_match(min_match){
+		: structure_iter(structure.elements, min_match), it(index), min_match(min_match){
 	}
 
 	int patternPos(){
