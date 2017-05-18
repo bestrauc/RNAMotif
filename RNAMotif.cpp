@@ -505,7 +505,7 @@ int main(int argc, char const ** argv)
 
 	std::cout << "Read reference DB with " << seqan::length(seqs) << " records\n";
 
-	StructureIterator strucIter(motifs[0]->profile[1].elements);
+	StructureIterator strucIter(motifs[0]->profile[1].elements, options.match_len);
 	std::tuple<int, int, int> bla;
 
 	std::set<std::string> patSet;
@@ -522,7 +522,7 @@ int main(int argc, char const ** argv)
 		//std::tie(a,b,c) = bla;
 
 		//std::string strString = strucIter.printPattern();
-		//std::cout << strString << " " << a << "\n";
+		//std::cout << strString << " " << strucIter.patLen() << "\n";
 		//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << " " << strucIter.patHash() << " / " << hashString(strString) << "\n";
 		//std::cout << "Next: " << strucIter.prof_ptr-.> \n";
 
@@ -535,20 +535,20 @@ int main(int argc, char const ** argv)
 			std::string strString = strucIter.printPattern(false);
 			//stringCollision[strString].push_back(std::make_pair(strucIter.printPattern(), std::make_pair(strucIter.pos, strucIter.element)));
 
-			/*
-			if (patSet.find(strString) != patSet.end()){
-				std::cout <<strString << " already seen?!\n";
+			//
+			//if (patSet.find(strString) != patSet.end()){
+			//	std::cout <<strString << " already seen?!\n";
 
-				for (int i1=0; i1 < stringCollision[strString].size(); ++i1){
-					std::cout << stringCollision[strString][i1].first << " " << stringCollision[strString][i1].second.first << " - " << stringCollision[strString][i1].second.second << "\n";
-				}
-			}
-			*/
+			//for (int i1=0; i1 < stringCollision[strString].size(); ++i1){
+			//std::cout << stringCollision[strString][i1].first << " " << stringCollision[strString][i1].second.first << " - " << stringCollision[strString][i1].second.second << "\n";
+			//				}
+			//}
+			//
 
 			patSet.insert(strString);
 
 			//if (!strucIter.full_pattern)
-			strucIter.skip_char();
+			//strucIter.skip_char();
 		}
 	}
 
