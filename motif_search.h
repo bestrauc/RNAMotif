@@ -79,9 +79,10 @@ public:
 
 class ProfileIterEmpty : public ProfileCharIter{
 public:
-	ProfileIterEmpty (int offset, int charNum) {
+	ProfileIterEmpty (int offset, int charNum, THashType empty_hash) {
 		this->offset = offset;
 		this->charNum = charNum;
+		this->seqHash = empty_hash;
 	};
 
 	std::pair<int,int> getNextChar(){
@@ -93,7 +94,7 @@ public:
 	}
 
 	THashType nextHash(){
-		return 0;
+		return this->seqHash;
 	}
 
 	int lastChar(){
@@ -161,9 +162,6 @@ public:
 			//std::cout << c.count[idx[ind]] << " char seen " << idx[ind] << "\n";
 			++ind;
 		}
-
-		//std::cout << "Gaps: " << gapsLeft << "\n";
-
 
 		// insert gaps into gapVal vector and sort by value
 		for (auto itr = gapMap.begin(); itr != gapMap.end(); ++itr){
@@ -293,7 +291,8 @@ public:
 	typedef std::pair<uint8_t, THashType> TPosHashPair;
 	typedef std::vector<TPosHashPair> TPairArray;
 	std::vector<std::vector<TPairArray> > prefix_states;
-	std::unordered_map<THashType, bool> end_state;
+	//std::unordered_map<TPosHashPair, bool> end_state;
+	std::unordered_set<TPosHashPair> end_state;
 
 	//std::vector<std::vector<std::unordered_map<std::pair<uint8_t, THashType>, bool> > > prefix_states;
 	std::vector<StructureElement> structure_elements;
@@ -303,7 +302,10 @@ public:
 	int elem_length;
 	int pos;
 	int intital_pos;
+	int end_count = 0;
 	ProfilePointer prof_ptr;
+	bool hashLast;
+	bool rejected = false;
 
 	// return the profile pointer of the profile
 	// that corresponds to position pos
@@ -330,7 +332,8 @@ public:
 			else {
 				//std::cout << "AT ENEDEDEDD\n";
 				duplicate = false;
-				return ProfilePointer(new ProfileIterEmpty(i, prof_ptr->nextLength()));
+				//std::cout << "End with " << prof_ptr->seqHash << " " << prof_ptr->nextHash() << "\n";
+				return ProfilePointer(new ProfileIterEmpty(i, prof_ptr->nextLength(), prof_ptr->nextHash()));
 			}
 
 			// the next position in the pattern goes to the left for stems or left-sided loops
@@ -368,12 +371,16 @@ public:
 									  structure_elements[element].loopLeft));
 		}
 
+		//std::cout << prof_ptr->seqHash << " --- " << prof_ptr->nextHash() << "\n";
+
 
 		//std::cout << "\n";
 		//if (prefix_states[element][pos][hash_pair] == false){
 		//	prefix_states[element][pos][hash_pair] = true;
 
+
 		TPosHashPair hash_pair = std::make_pair(next_ptr->charNum, next_ptr->seqHash);
+
 		size_t prefix_key = std::hash<TPosHashPair>()(hash_pair);
 		if (prefix_states[element][pos][(prefix_key % HashTabLength)] != hash_pair){
 			prefix_states[element][pos][prefix_key % HashTabLength] = hash_pair;
@@ -384,7 +391,8 @@ public:
 			//std::cout << this->printPattern() << "\t   duplicate at " << element << " " << pos << " " << prefix_key << "\n";
 		}
 
-		//duplicate = false;
+
+//		duplicate = false;
 
 		return next_ptr;
 	}
@@ -439,8 +447,8 @@ public:
 	std::stack<ProfilePointer> state;
 	std::tuple<int, int, int> end;
 
-	StructureIterator(std::vector<StructureElement> &structure_elements, int length)
-		: structure_elements(structure_elements), max_length(length), end(-1,-1,-1) {
+	StructureIterator(std::vector<StructureElement> &structure_elements, int length, bool hashLast)
+		: structure_elements(structure_elements), max_length(length), hashLast(hashLast), end(-1,-1,-1) {
 		//for (StructureElement elem : structure_elements){
 		//	cumulative_lens.push_back(total_length);
 		//	total_length += seqan::length(elem.loopComponents[0]);
@@ -526,6 +534,8 @@ public:
 
 		int next_char_val, backtracked = backtrack;
 		bool single_type;
+		bool duplicate = true;
+		rejected = false;
 
 		if (this->patLen() >= this->max_length){
 			skip_char();
@@ -533,10 +543,7 @@ public:
 
 		//std::cout << prof_ptr->atEnd() << "\n";
 
-		bool char_extension = false;
-		while (!char_extension){
-			char_extension = true;
-
+		while (duplicate){
 			// get previous state (backtrack to valid state if necessary)
 			while (prof_ptr->atEnd()) {
 				//std::cout << "At End\n";
@@ -564,41 +571,38 @@ public:
 
 			// if we are at a gap, skip the gap to the next character
 			if (skip_count > 0){
-				//std::cout << "Skipping gap of length " << skip_count << " " << prof_ptr->charNum << " " << prof_ptr->nextLength() << " " << state.size() << "\n";
-
-				bool duplicate;
 				prof_ptr = this->next_profile(skip_count, duplicate);
-				if (duplicate){
-					skip_char();
-				}
-
-				return get_next_char(backtracked);
+			}
+			else {
+				prof_ptr = this->next_profile(duplicate);
 			}
 
-			single_type = typeid(*prof_ptr) == typeid(TSinglePointer);
+			//duplicate = false;
 
-			bool duplicate;
-			prof_ptr = this->next_profile(duplicate);
-
+			// if the prefix pattern was already seen before, abort and skip
+			// the current extension. (Start the loop again top)
 			if (duplicate){
 				skip_char();
-				char_extension = false;
-				//return get_next_char();
+				continue;
 			}
+
+			// only executed if !duplicate
+			single_type = typeid(*prof_ptr) == typeid(TSinglePointer);
 
 			// check if the target length has been reached
 			// if so, exclude duplicates again
-			if (false)
+			if (hashLast)
 				if (this->patLen() >= this->max_length){
-					THashType end_hash = prof_ptr->nextHash();
+					TPosHashPair pair_hash = std::make_pair(this->patLen(), prof_ptr->seqHash);
 
 					// skip
-					if (end_state[end_hash]){
+					if (end_state.find(pair_hash) != end_state.end()){
 						skip_char();
-						return get_next_char();
+						duplicate = true;
 					}
 					else{
-						end_state[end_hash] = true;
+						//end_state[pair_hash] = true;
+						end_state.insert(pair_hash);
 					}
 				}
 		}
@@ -618,9 +622,7 @@ public:
 	}
 
 	uint64_t patHash(){
-		//if (full_pattern)			return prof_ptr->charNum;
-
-		//return state.empty() ? 0 : state.top()->charNum;
+		//return prof_ptr->nextHash();
 		return prof_ptr->seqHash;
 	}
 
@@ -812,7 +814,7 @@ public:
 	unsigned count = 0;
 
 	MotifIterator(TStructure &structure, TBidirectionalIndex &index, double min_match)
-		: structure_iter(structure.elements, min_match), it(index), min_match(min_match){
+		: structure_iter(structure.elements, min_match, false), it(index), min_match(min_match){
 	}
 
 	int patternPos(){

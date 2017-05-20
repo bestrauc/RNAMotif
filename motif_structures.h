@@ -44,6 +44,7 @@
 
 // C++ headers
 #include <unordered_map>
+#include <unordered_set>
 #include <stack>
 #include <numeric>
 #include <memory>

@@ -201,6 +201,9 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 			seqLength = 0;
 		}
 
+		//if (seqLength == 0)
+		//	continue;
+
 		// set the statistics (min, max, average lengths)
 		stats.mean_length += seqLength;
 
@@ -481,8 +484,15 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 	TInteractions &consensus = stemStructure.interactions;
 	//TInteractionPairs consensus(motif.consensusStructure);
 
-	std::set<int> excludeSet;
+	{
+		std::set<int> tmpSet;
+		StructureElement tmp;
+		tmp.type == HAIRPIN;
+		addProfile(tmp, stemStructure.pos.first, stemStructure.pos.second, seedAlignment, tmpSet);
+		std::cout << "VARIATION: " << tmp.statistics[0].min_length << " Max: " << tmp.statistics[0].max_length << "\n";
+	}
 
+	std::set<int> excludeSet;
 	size_t i = stemStructure.pos.first;
 	do {
 		int pos = i;
