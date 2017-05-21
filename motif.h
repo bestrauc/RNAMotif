@@ -558,6 +558,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 		else if (right == -1){
 			StructureElement structure;
 			StructureElement structure2;
+			bool struc2_set = false;
 
 			// get right border bracket of other half of loop (->(...(..)...)<=)
 			int run = pos;
@@ -590,11 +591,13 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 				structure.type = LOOP;
 				TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment, excludeSet, true);
-				TStemProfileString loopProfile  = addProfile(structure, pos, run-1, lb+1, rb-1, seedAlignment, excludeSet);
+				//TStemProfileString loopProfile  = addProfile(structure, pos, run-1, lb+1, rb-1, seedAlignment, excludeSet);
 				structure.loopLeft = true;
 				TLoopProfileString rightProfile = addProfile(structure2, lb+1, rb-1, seedAlignment, excludeSet);
-				TStemProfileString loopProfile2  = addProfile(structure2, pos, run-1, lb+1, rb-1, seedAlignment, excludeSet);
+				//TStemProfileString loopProfile2 = addProfile(structure2, pos, run-1, lb+1, rb-1, seedAlignment, excludeSet);
 				structure2.loopLeft = false;
+				structure2.location = lb+1;
+				struc2_set = true;
 
 				//TLoopProfileString leftProfile  = addProfile(structure, pos, run-1, seedAlignment, true);
 				//TLoopProfileString rightProfile = addProfile(structure, lb+1, rb-1, seedAlignment);
@@ -603,6 +606,10 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 			structure.location = pos;
 			stemStructure.elements.push_back(structure);
+
+			if (struc2_set){
+				stemStructure.elements.push_back(structure2);
+			}
 
 			if (structure.type == HAIRPIN)
 				break;
