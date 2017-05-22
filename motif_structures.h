@@ -307,7 +307,7 @@ typedef seqan::IntervalAndCargo<long unsigned int, std::shared_ptr<std::vector<b
 typedef seqan::IntervalTree<long unsigned int, std::shared_ptr<std::vector<bool> >, seqan::StoreIntervals> TProfileInterval;
 
 typedef uint32_t THashType;
-const size_t HashTabLength = 2*1024*1024;
+const size_t HashTabLength = 1*1024*1024;
 
 struct StructureStatistics{
 	unsigned min_length;
@@ -327,14 +327,14 @@ struct StructureElement{
 	// for STEM   : two strings (left and right side of the stem)
 	// for LOOP   : two strings (left and right side of the loop)
 	//			    if one side is empty, loop is a bulge
-	std::vector<TLoopProfileString> loopComponents;
+	TLoopProfileString loopComponents;
 	// gaps that can occur at each position of the descriptor
 	std::vector<std::map<int, int> > gap_lengths;
 	TStemProfileString stemProfile;
 
 	// length of the sequence that makes up the structure
 	// the variation in length comes due to gaps in the alignment
-	std::vector<StructureStatistics> statistics;
+	StructureStatistics statistics;
 };
 
 typedef std::vector<std::pair<BracketType, int> > TConsensusStructure;
