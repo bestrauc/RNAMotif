@@ -94,6 +94,18 @@ double profileEntropy(seqan::String<seqan::ProfileChar<TAlphabet> > &profileStri
 	return h/n;
 }
 
+double loopEntropy(TLoopProfileString &profileStringComponents){
+	//std::cout << profileStringComponents[0] << " " << profileStringComponents[1] << "\n";
+
+	//int n = seqan::length(profileStringComponents);
+
+	double H1 = profileEntropy(profileStringComponents);
+	//double H2 = n == 2 ? profileEntropy(profileStringComponents[1]) : 0;
+
+	//return (H1+H2)/n;
+	return H1;
+}
+
 double loopEntropy(std::vector<TLoopProfileString> &profileStringComponents){
 	//std::cout << profileStringComponents[0] << " " << profileStringComponents[1] << "\n";
 
@@ -103,7 +115,9 @@ double loopEntropy(std::vector<TLoopProfileString> &profileStringComponents){
 	double H2 = n == 2 ? profileEntropy(profileStringComponents[1]) : 0;
 
 	return (H1+H2)/n;
+	//return H1;
 }
+
 
 double stemEntropy(TStemProfileString &stemProfile){
 	//std::cout << profileStringComponents[0] << " " << profileStringComponents[1] << "\n";
@@ -268,14 +282,18 @@ TLoopProfileString addProfile(StructureElement &structureElement, unsigned start
 	if (structureElement.type == StructureType::HAIRPIN && stats.min_length < 3)
 		stats.min_length = 3;
 
-	structureElement.loopComponents.push_back(profileString);
-	structureElement.statistics.push_back(stats);
+	structureElement.loopComponents = profileString;
+	structureElement.statistics = stats;
 	structureElement.gap_lengths = gapString;
 
 	return profileString;
 }
 
 TStemProfileString addProfile(StructureElement &structureElement, unsigned start1, unsigned end1, unsigned start2, unsigned end2, TAlign &align, std::set<int> &excludeSet){
+
+	if (end1-start1+1 != end2-start2+1){
+		throw(std::runtime_error("Stem is not properly sized."));
+	}
 
 	typedef typename seqan::Value<TStemProfileString>::Type TProfileChar;
 
@@ -489,7 +507,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 		StructureElement tmp;
 		tmp.type == HAIRPIN;
 		addProfile(tmp, stemStructure.pos.first, stemStructure.pos.second, seedAlignment, tmpSet);
-		std::cout << "VARIATION: " << tmp.statistics[0].min_length << " Max: " << tmp.statistics[0].max_length << "\n";
+		std::cout << "VARIATION: " << tmp.statistics.min_length << " Max: " << tmp.statistics.max_length << "\n";
 	}
 
 	std::set<int> excludeSet;
@@ -536,8 +554,10 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 					i = pos;
 				}
+				else{
+					++pos;
+				}
 
-				++pos;
 				right = consensus[pos];
 			}
 
@@ -582,7 +602,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 
 				structure.type = HAIRPIN;
 				TLoopProfileString hairpinProfile = addProfile(structure, pos, run-1, seedAlignment, excludeSet);
-				std::cout << "HAIRPIN: " << structure.statistics[0].min_length << " Max: " << structure.statistics[0].max_length << "\n";
+				std::cout << "HAIRPIN: " << structure.statistics.min_length << " Max: " << structure.statistics.max_length << "\n";
 				structure.loopLeft = false;
 			}
 			// Interior loop with left and right side
@@ -595,6 +615,7 @@ void partitionStemLoop(TAlign &seedAlignment, TStructure &stemStructure){
 				structure.loopLeft = true;
 				TLoopProfileString rightProfile = addProfile(structure2, lb+1, rb-1, seedAlignment, excludeSet);
 				//TStemProfileString loopProfile2 = addProfile(structure2, pos, run-1, lb+1, rb-1, seedAlignment, excludeSet);
+				structure2.type = LOOP;
 				structure2.loopLeft = false;
 				structure2.location = lb+1;
 				struc2_set = true;
