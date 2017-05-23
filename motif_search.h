@@ -61,8 +61,7 @@ public:
 	bool left = false;
 
 	int charNum = 0;
-	int charPos = 0;
-	int endPos = 0;
+	std::pair<int,int> pos;
 	int gapsLeft = 0;
 	int offset = 0;
 	int gapsize = 0;
@@ -137,10 +136,10 @@ class ProfileCharIterImpl : public ProfileCharIter{
 
 
 public:
-	ProfileCharIterImpl (TProfileChar c, std::map<int, int> &gapMap, int charNum, int charPos, int gapsLeft, int offset, THashType prev_hash, bool left, double threshold_freq=0.05)
+	ProfileCharIterImpl (TProfileChar c, std::map<int, int> &gapMap, int charNum, std::pair<int,int> pos, int gapsLeft, int offset, THashType prev_hash, bool left, double threshold_freq=0.05)
 							: c(c), idx(char_size) {
 		this->charNum = charNum;
-		this->charPos = charPos;
+		this->pos = pos;
 		this->left = left;
 		this->gapsLeft = gapsLeft;
 		this->offset = offset;
@@ -173,6 +172,7 @@ public:
 			gapVals.push_back(*itr);
 		}
 
+		// sort in a way such that shortest gaps get inserted first
 		std::sort(gapVals.begin(), gapVals.end(),
 			[&](std::pair<int, int>& a, std::pair<int, int>& b) {
 				return a.second > b.second;
@@ -299,7 +299,7 @@ public:
 	int max_length;
 	int elem_length;
 	int pos;
-	int intital_pos;
+	std::pair<int,int> intital_pos;
 	int end_count = 0;
 	double threshold_freq;
 	ProfilePointer prof_ptr;
@@ -308,7 +308,8 @@ public:
 	// return the profile pointer of the profile
 	// that corresponds to position pos
 	ProfilePointer next_profile(int offset, bool &duplicate){
-		int next_pos  = prof_ptr->charPos;
+		int next_pos  = prof_ptr->pos.first;
+		int end_pos  = prof_ptr->pos.second;
 		int last_gaps = prof_ptr->gapsLeft;
 
 		bool changed = false;
@@ -337,6 +338,7 @@ public:
 			// the next position in the pattern goes to the left for stems or left-sided loops
 			// else it does not change (-0)
 			next_pos = next_pos - (structure_elements[element].type == StructureType::STEM || structure_elements[element].loopLeft);
+			end_pos  = end_pos  + (structure_elements[element].type == StructureType::STEM || !structure_elements[element].loopLeft);
 		}
 
 		if (!changed && prof_ptr->atGap()){
@@ -351,7 +353,7 @@ public:
 			next_ptr = ProfilePointer(new TPairPointer(structure_elements[element].stemProfile[pos],
 									  structure_elements[element].gap_lengths[pos],
 									  prof_ptr->nextLength(),
-									  next_pos,
+									  std::make_pair(next_pos, end_pos),
 									  last_gaps,
 									  offset,
 									  prof_ptr->nextHash(),
@@ -361,7 +363,7 @@ public:
 			next_ptr = ProfilePointer(new TSinglePointer(structure_elements[element].loopComponents[pos],
 									  structure_elements[element].gap_lengths[pos],
 									  prof_ptr->nextLength(),
-									  next_pos,
+									  std::make_pair(next_pos, end_pos),
 									  last_gaps,
 									  offset,
 									  prof_ptr->nextHash(),
@@ -430,7 +432,6 @@ public:
 
 //public:
 	//bool full_pattern = false;
-	uint64_t single = 0, paired = 0;
 	uint64_t count;
 
 	std::stack<ProfilePointer> state;
@@ -480,7 +481,7 @@ public:
 		this->count = 0;
 
 		auto &hairpin = structure_elements[element].loopComponents;
-		this->intital_pos = structure_elements[element].location;
+		this->intital_pos = std::make_pair(structure_elements[element].location, structure_elements[element].location);
 
 		prof_ptr = ProfilePointer(new TSinglePointer(hairpin[pos], structure_elements[element].gap_lengths[pos], 0,
 								  this->intital_pos, this->elem_length-structure_elements[element].statistics.min_length,
@@ -494,9 +495,6 @@ public:
 
 		// return one or two characters to search, depending on the substructure
 		if (single_type){
-			//std::cout << "Single\n";
-			++single;
-
 			if (structure_elements[element].loopLeft == false){
 			//if (prof_ptr->left){
 				ret = std::make_tuple(backtracked, -1, next_char_val);
@@ -506,8 +504,6 @@ public:
 			}
 		}
 		else{
-			//std::cout << "Double\n";
-			++paired;
 			unsigned lchar = next_char_val / AlphabetSize;
 			unsigned rchar = next_char_val % AlphabetSize;
 
@@ -637,10 +633,10 @@ public:
 		return ss.str();
 	}
 
-	int patPos(){
+	std::pair<int,int> patPos(){
 		//if (full_pattern)		return prof_ptr->charPos;
 
-		return state.empty() ? this->intital_pos : state.top()->charPos;
+		return state.empty() ? this->intital_pos : state.top()->pos;
 	}
 
 	// print the current pattern
@@ -814,7 +810,7 @@ public:
 		: structure_iter(structure.elements, min_match, true), it(index), min_match(min_match){
 	}
 
-	int patternPos(){
+	std::pair<int,int> patternPos(){
 		return this->structure_iter.patPos();
 	}
 
@@ -1066,13 +1062,13 @@ std::pair<TBoolVec,TBoolVec> getStemloopPositions(TBidirectionalIndex &index, Mo
 			auto occs = iter.getOccurrences();
 			occ_sum += occ_count;
 
-			int pattern_pos = iter.patternPos();
+			std::pair<int,int> pattern_pos = iter.patternPos();
 
 			for (int i=0; i < seqan::length(occs); ++i){
 				const TIndexPosType &pos = seqan::value(occs, i);
 
 				// count a match at this position
-				int stem_loop_pos = pattern_pos - structure.pos.first;
+				int stem_loop_pos = pattern_pos.first - structure.pos.first;
 				int index = (pos.i2 >= stem_loop_pos) ? (pos.i2 - stem_loop_pos) : 0;
 				pos_hits[pos.i1][index][id] = true;
 				//int index = (pos.i2 >= pattern_pos) ? (pos.i2 - pattern_pos) : 0;
