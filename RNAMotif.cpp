@@ -142,35 +142,6 @@ uint64_t hashString(std::string &rnaStr){
 // Classes
 // ==========================================================================
 
-// --------------------------------------------------------------------------
-// Class AppOptions
-// --------------------------------------------------------------------------
-
-// This struct stores the options from the command line.
-//
-// You might want to rename this to reflect the name of your app.
-
-struct AppOptions
-{
-    // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
-    int verbosity;
-    int fold_length;
-    int match_len;
-    unsigned threads;
-    bool constrain;
-    bool pseudoknot;
-
-    // The first (and only) argument of the program is stored here.
-    seqan::CharString rna_file;
-    seqan::CharString genome_file;
-
-    AppOptions() :
-        verbosity(1),
-		constrain(0),
-		pseudoknot(0)
-    {}
-};
-
 // ==========================================================================
 // Functions
 // ==========================================================================
@@ -197,11 +168,16 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "INPUT FILE"));
     addArgument(parser, seqan::ArgParseArgument(seqan::ArgParseArgument::STRING, "GENOME FILE"));
 
+    addOption(parser, seqan::ArgParseOption("r", "reference", "Reference file with ground-truth table.", seqan::ArgParseOption::STRING));
+
     addOption(parser, seqan::ArgParseOption("ml", "max-length", "Maximum sequence length to fold", seqan::ArgParseOption::INTEGER));
     setDefaultValue(parser, "max-length", 1000);
 
     addOption(parser, seqan::ArgParseOption("t", "threads", "Number of threads to use for motif extraction.", seqan::ArgParseOption::INTEGER));
     setDefaultValue(parser, "threads", 1);
+
+    addOption(parser, seqan::ArgParseOption("f", "freq", "Frequency threshold (% as integer values).", seqan::ArgParseOption::INTEGER));
+    setDefaultValue(parser, "freq", 0);
 
     addOption(parser, seqan::ArgParseOption("m", "match-length", "Seed length.", seqan::ArgParseOption::INTEGER));
 
@@ -238,8 +214,207 @@ parseCommandLine(AppOptions & options, int argc, char const ** argv)
     getOptionValue(options.fold_length, parser, "max-length");
     getOptionValue(options.threads, parser, "threads");
     getOptionValue(options.match_len, parser, "match-length");
+    getOptionValue(options.reference_file, parser, "reference");
+
+    int freq;
+    getOptionValue(freq, parser, "freq");
+    options.freq_threshold = ((double)freq)/100.0;
 
     return seqan::ArgumentParser::PARSE_OK;
+}
+
+void outputStats(std::vector<Motif*> &motifs){
+	std::ofstream fout;
+	fout.open("output_stats.txt", std::ios_base::app | std::ios_base::out);
+	//fout.open("output_stats.txt");
+
+	StructureElement tmpStruc;
+
+	int c = 0;
+	for (auto motif : motifs){
+
+
+		c += 1;
+
+		if (motif == 0)
+			continue;
+
+		int aln_len = seqan::length(seqan::row(motif->seedAlignment,0));
+
+		//fout << aln_len;
+
+		double h_none;
+
+		for (TStructure &structure : motif->profile){
+			//fout << structure.prob << "\t" << structure.suboptimal << "\n";
+
+			//fout << "\t";
+			//fout << (structure.pos.second - structure.pos.first) << ":" << structure.elements.size() << ":" << structure.prob;
+			//fout << (2-loopEntropy(structure.elements.back().loopComponents)) << ":" << seqan::length(structure.elements.back().loopComponents[0]);
+			double h_stem  = 0;
+			double h_hair  = 0;
+			double h_bulge = 0;
+			double h_loop  = 0;
+
+			double gap_min_hair  = 0, gap_med_hair  = 0, gap_max_hair  = 0;
+			double gap_min_loop  = 0, gap_med_loop  = 0, gap_max_loop  = 0;
+			double gap_min_bulge = 0, gap_med_bulge = 0, gap_max_bulge = 0;
+			double gap_min_stem  = 0, gap_med_stem  = 0, gap_max_stem  = 0;
+
+			int n_stem  = 0;
+			int n_hair  = 0;
+			int n_bulge = 0;
+			int n_loop  = 0;
+
+			h_none = (seqan::length(motif->externalBases) > 0) ? loopEntropy(motif->externalBases) : -1;
+
+			bool a1=false,a2=false,a3=false,a4=false;
+
+			//std::cout << "(" << structure.pos.first << "," << structure.pos.second << ")";
+
+			for (StructureElement &element: structure.elements){
+				double elemLen = seqan::length(element.loopComponents);
+
+				//std::cout << element.statistics[0].min_length << "- min\n";
+				//std::cout << element.statistics[0].mean_length << "- mean\n";
+				//std::cout << element.statistics[0].max_length << "- max\n";
+				//std::cout << elemLen << "- N\n";
+
+				double min  = element.statistics.min_length /elemLen;
+				double mean = element.statistics.mean_length/elemLen;
+				double max  = element.statistics.max_length /elemLen;
+
+				/*
+				if (element.statistics.size() > 1){
+					double elemLen2 = seqan::length(element.loopComponents[1]);
+					min  += element.statistics[1].min_length /elemLen2;
+					mean += element.statistics[1].mean_length/elemLen2;
+					max  += element.statistics[1].max_length /elemLen2;
+
+					min  = min/2;
+					mean = mean/2;
+					max  = max/2;
+				}
+				*/
+
+				switch (element.type) {
+					case StructureType::HAIRPIN:
+						++n_hair;
+						h_hair += loopEntropy(element.loopComponents);
+						a2 = true;
+
+						gap_min_hair += min;
+						gap_med_hair += mean;
+						gap_max_hair += max;
+						break;
+					case StructureType::LOOP:
+						++n_loop;
+						h_loop += loopEntropy(element.loopComponents);
+						a3 = true;
+
+						gap_min_loop += min;
+						gap_med_loop += mean;
+						gap_max_loop += max;
+						break;
+					case StructureType::LBULGE:
+					case StructureType::RBULGE:
+						++n_bulge;
+						h_bulge += loopEntropy(element.loopComponents);
+						a4 = true;
+
+						gap_min_bulge += min;
+						gap_med_bulge += mean;
+						gap_max_bulge += max;
+						break;
+					case StructureType::STEM:
+						++n_stem;
+						h_stem += stemEntropy(element.stemProfile);
+						a1 = true;
+
+						gap_min_stem += min;
+						gap_med_stem += mean;
+						gap_max_stem += max;
+						break;
+					default:
+						break;
+				}
+			}
+
+			//std::cout << (gap_min_hair ) << ":" << (gap_med_hair  ) << ":" << (gap_max_hair  ) << "\t"
+			//	 << (gap_min_loop ) << ":" << (gap_med_loop  ) << ":" << (gap_max_loop  ) << "\t"
+			//	 << (gap_min_bulge) << ":" << (gap_med_bulge) << ":" << (gap_max_bulge) << "\t"
+			//	 << (gap_min_stem  ) << ":" << (gap_med_stem  ) << ":" << (gap_max_stem  ) << "\n";
+
+			//std::cout << n_hair << "\t" << n_loop << "\t" << n_bulge << "\t" << n_stem << "\n";
+
+			//fout << (a2 ? (2-h_hair/n_hair) : -1) << ":" << (a1 ? (3-h_stem/n_stem) : -1) << ":" << (a3 ? (2-h_loop/n_loop) : -1) << ":" << (a4 ? (2-h_bulge/n_bulge) : -1);
+
+			//fout << gap_min_hair /n_hair  << ":" << gap_med_hair /n_hair << ":" << gap_max_hair /n_hair << "|"
+			//	 << gap_min_loop /n_loop  << ":" << gap_med_loop /n_loop << ":" << gap_max_loop /n_loop << "|"
+			//	 << gap_min_bulge/n_bulge << ":" << gap_med_bulge/n_bulge<< ":" << gap_max_bulge/n_bulge<< "|"
+			//	 << gap_min_stem /n_stem << ":" << gap_med_stem /n_stem << ":" << gap_max_stem /n_stem;
+
+			//fout << (a2 ? (gap_min_hair /n_hair ) : -1) << ":" << (a2 ? (gap_med_hair /n_hair ) : -1) << ":" << (a2 ? (gap_max_hair /n_hair ) : -1) << "|"
+			//	 << (a3 ? (gap_min_loop /n_loop ) : -1) << ":" << (a3 ? (gap_med_loop /n_loop ) : -1) << ":" << (a3 ? (gap_max_loop /n_loop ) : -1) << "|"
+			//	 << (a4 ? (gap_min_bulge/n_bulge) : -1) << ":" << (a4 ? (gap_med_bulge/n_bulge) : -1) << ":" << (a4 ? (gap_max_bulge/n_bulge) : -1) << "|"
+			//	 << (a1 ? (gap_min_stem /n_stem ) : -1) << ":" << (a1 ? (gap_med_stem /n_stem ) : -1) << ":" << (a1 ? (gap_max_stem /n_stem ) : -1) << "\t";
+		}
+
+		//fout << "\t" << (2-h_none) << "\n";
+		//fout << motif->mcc << "\n";
+	}
+}
+
+template<typename Out>
+void split(const std::string &s, char delim, Out result) {
+    std::stringstream ss;
+    ss.str(s);
+    std::string item;
+    while (std::getline(ss, item, delim)) {
+        *(result++) = item;
+    }
+}
+
+
+std::vector<std::string> split(const std::string &s, char delim) {
+    std::vector<std::string> elems;
+    split(s, delim, std::back_inserter(elems));
+    return elems;
+}
+
+
+std::unordered_map<std::string, std::vector<RfamBenchRecord> > read_reference(seqan::CharString file, bool exclude_rev = true){
+	std::unordered_map<std::string, std::vector<RfamBenchRecord> > result;
+
+	std::ifstream infile(seqan::toCString(file));
+	std::string ID, ref, seq, start, end;
+	while (infile >> ID >> ref >> seq >> start >> end)
+	{
+		RfamBenchRecord record;
+
+		std::vector<std::string> idsplit = split(ID, '/');
+		record.ID = idsplit[0];
+		record.seq_nr = std::stoi(idsplit[1]);
+
+		std::vector<std::string> refsplit = split(ref, 'k');
+		record.ref_nr = std::stoi(refsplit[1]);
+
+		record.seq_name = seq;
+		record.start = std::stoi(start)-2;
+		record.end = std::stoi(end)-2;
+
+		record.reverse = record.start > record.end;
+
+		if (exclude_rev && record.reverse){
+			continue;
+		}
+
+		result[record.ID].push_back(record);
+		//std::cout << ID << "\t" << ref << "\t" << seq << "\t" << start << "\t" << end << "\n";
+		//std::cout << record.ID << "\t" << record.seq_nr << "\t" << record.ref_nr << "\t" << record.seq_name << "\t" << record.start << "\t" << record.end << "\n";
+	}
+
+	return result;
 }
 
 // --------------------------------------------------------------------------
@@ -254,7 +429,7 @@ int main(int argc, char const ** argv)
     seqan::ArgumentParser parser;
     AppOptions options;
     seqan::ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
-	
+
     // If there was an error parsing or built-in argument parser functionality
     // was triggered then we exit the program.  The return code is 1 if there
     // were errors and 0 if there were none.
@@ -273,7 +448,9 @@ int main(int argc, char const ** argv)
                   << "CONSTRAINT\t" << options.constrain << '\n'
 				  << "PSEUDOKNOTS\t" << options.pseudoknot << '\n'
 				  << "MAX LENGTH\t" << options.fold_length << '\n'
+				  << "FREQUENCY\t" << options.freq_threshold << '\n'
 				  << "RNA      \t" << options.rna_file << '\n'
+				  << "REFERENCE\t" << options.reference_file << '\n'
                   << "TARGET   \t" << options.genome_file << "\n\n";
 
         std::cout << "Data types\n"
@@ -281,9 +458,13 @@ int main(int argc, char const ** argv)
 				  << seqan::ValueSize<TAlphabet>::VALUE << "\n"
         		  << seqan::ValueSize<TBiAlphabet>::VALUE << "\n"
 				  << seqan::ValueSize<TAlphabetProfile>::VALUE << "\n"
-				  << seqan::ValueSize<TBiAlphabetProfile>::VALUE << "\n";
+				  << seqan::ValueSize<TBiAlphabetProfile>::VALUE << "\n"
+				  << "Cache size " << HashTabLength << "\n";
     }
 
+
+    //std::vector<bool> testbool(5,true);
+    //std::cout << "TEST" << std::accumulate(testbool.begin(), testbool.end(), 0) << "\n";
 
     omp_set_num_threads(options.threads);
 
@@ -357,204 +538,155 @@ int main(int argc, char const ** argv)
 		if (options.constrain)
 			free(constraint_bracket);
 	}
-
-	std::ofstream fout;
-	//fout.open("output_stats.txt", std::ios_base::app | std::ios_base::out);
-	fout.open("output_stats.txt");
-
-	StructureElement tmpStruc;
-
-	int c = 0;
-	for (auto motif : motifs){
-		c += 1;
-
-		if (motif == 0)
-			continue;
-
-		int aln_len = seqan::length(seqan::row(motif->seedAlignment,0));
-
-		//fout << aln_len;
-
-		double h_none;
-
-		for (TStructure &structure : motif->profile){
-			//fout << "\t";
-			//fout << (structure.pos.second - structure.pos.first) << ":" << structure.elements.size() << ":" << structure.prob;
-			//fout << (2-loopEntropy(structure.elements.back().loopComponents)) << ":" << seqan::length(structure.elements.back().loopComponents[0]);
-			double h_stem  = 0;
-			double h_hair  = 0;
-			double h_bulge = 0;
-			double h_loop  = 0;
-
-			double gap_min_hair  = 0, gap_med_hair  = 0, gap_max_hair  = 0;
-			double gap_min_loop  = 0, gap_med_loop  = 0, gap_max_loop  = 0;
-			double gap_min_bulge = 0, gap_med_bulge = 0, gap_max_bulge = 0;
-			double gap_min_stem  = 0, gap_med_stem  = 0, gap_max_stem  = 0;
-
-			int n_stem  = 0;
-			int n_hair  = 0;
-			int n_bulge = 0;
-			int n_loop  = 0;
-
-			h_none = (seqan::length(motif->externalBases) > 0) ? loopEntropy(motif->externalBases) : -1;
-
-			bool a1=false,a2=false,a3=false,a4=false;
-
-			//std::cout << "(" << structure.pos.first << "," << structure.pos.second << ")";
-
-			for (StructureElement &element: structure.elements){
-				double elemLen = seqan::length(element.loopComponents[0]);
-
-				//std::cout << element.statistics[0].min_length << "- min\n";
-				//std::cout << element.statistics[0].mean_length << "- mean\n";
-				//std::cout << element.statistics[0].max_length << "- max\n";
-				//std::cout << elemLen << "- N\n";
-
-				double min  = element.statistics[0].min_length /elemLen;
-				double mean = element.statistics[0].mean_length/elemLen;
-				double max  = element.statistics[0].max_length /elemLen;
-
-				if (element.statistics.size() > 1){
-					double elemLen2 = seqan::length(element.loopComponents[1]);
-					min  += element.statistics[1].min_length /elemLen2;
-					mean += element.statistics[1].mean_length/elemLen2;
-					max  += element.statistics[1].max_length /elemLen2;
-
-					min  = min/2;
-					mean = mean/2;
-					max  = max/2;
-				}
-
-				switch (element.type) {
-					case StructureType::HAIRPIN:
-						++n_hair;
-						h_hair += loopEntropy(element.loopComponents);
-						a2 = true;
-
-						gap_min_hair += min;
-						gap_med_hair += mean;
-						gap_max_hair += max;
-						break;
-					case StructureType::LOOP:
-						++n_loop;
-						h_loop += loopEntropy(element.loopComponents);
-						a3 = true;
-
-						gap_min_loop += min;
-						gap_med_loop += mean;
-						gap_max_loop += max;
-						break;
-					case StructureType::LBULGE:
-					case StructureType::RBULGE:
-						++n_bulge;
-						h_bulge += loopEntropy(element.loopComponents);
-						a4 = true;
-
-						gap_min_bulge += min;
-						gap_med_bulge += mean;
-						gap_max_bulge += max;
-						break;
-					case StructureType::STEM:
-						++n_stem;
-						h_stem += stemEntropy(element.stemProfile);
-						a1 = true;
-
-						gap_min_stem += min;
-						gap_med_stem += mean;
-						gap_max_stem += max;
-						break;
-					default:
-						break;
-				}
-			}
-
-			//std::cout << (gap_min_hair ) << ":" << (gap_med_hair  ) << ":" << (gap_max_hair  ) << "\t"
-			//	 << (gap_min_loop ) << ":" << (gap_med_loop  ) << ":" << (gap_max_loop  ) << "\t"
-			//	 << (gap_min_bulge) << ":" << (gap_med_bulge) << ":" << (gap_max_bulge) << "\t"
-			//	 << (gap_min_stem  ) << ":" << (gap_med_stem  ) << ":" << (gap_max_stem  ) << "\n";
-
-			//std::cout << n_hair << "\t" << n_loop << "\t" << n_bulge << "\t" << n_stem << "\n";
-
-			//fout << (a2 ? (2-h_hair/n_hair) : -1) << ":" << (a1 ? (3-h_stem/n_stem) : -1) << ":" << (a3 ? (2-h_loop/n_loop) : -1) << ":" << (a4 ? (2-h_bulge/n_bulge) : -1);
-
-			//fout << gap_min_hair /n_hair  << ":" << gap_med_hair /n_hair << ":" << gap_max_hair /n_hair << "|"
-			//	 << gap_min_loop /n_loop  << ":" << gap_med_loop /n_loop << ":" << gap_max_loop /n_loop << "|"
-			//	 << gap_min_bulge/n_bulge << ":" << gap_med_bulge/n_bulge<< ":" << gap_max_bulge/n_bulge<< "|"
-			//	 << gap_min_stem /n_stem << ":" << gap_med_stem /n_stem << ":" << gap_max_stem /n_stem;
-
-			//fout << (a2 ? (gap_min_hair /n_hair ) : -1) << ":" << (a2 ? (gap_med_hair /n_hair ) : -1) << ":" << (a2 ? (gap_max_hair /n_hair ) : -1) << "|"
-			//	 << (a3 ? (gap_min_loop /n_loop ) : -1) << ":" << (a3 ? (gap_med_loop /n_loop ) : -1) << ":" << (a3 ? (gap_max_loop /n_loop ) : -1) << "|"
-			//	 << (a4 ? (gap_min_bulge/n_bulge) : -1) << ":" << (a4 ? (gap_med_bulge/n_bulge) : -1) << ":" << (a4 ? (gap_max_bulge/n_bulge) : -1) << "|"
-			//	 << (a1 ? (gap_min_stem /n_stem ) : -1) << ":" << (a1 ? (gap_med_stem /n_stem ) : -1) << ":" << (a1 ? (gap_max_stem /n_stem ) : -1) << "\t";
-		}
-
-		//fout << "\t" << (2-h_none) << "\n";
-		//fout << motif->mcc << "\n";
+	std::unordered_map<std::string, std::vector<RfamBenchRecord> > reference_pos;
+	//outputStats(motifs);
+	if (options.reference_file != ""){
+		reference_pos = read_reference(options.reference_file);
+	}
+	else{
+		std::cout << "No reference pos file given.\n";
+		return 0;
 	}
 
-	//return 0;
 	std::cout << "Searching for the motifs.\n";
 
 	// possibly refactor this into separate program
 
-    seqan::StringSet<seqan::CharString> ids;
-	seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
+	seqan::StringSet<seqan::CharString> ids;
+    seqan::StringSet<seqan::String<TBaseAlphabet> > seqs;
 
 	seqan::SeqFileIn seqFileIn(toCString(options.genome_file));
 	readRecords(ids, seqs, seqFileIn);
 
 	std::cout << "Read reference DB with " << seqan::length(seqs) << " records\n";
 
-	StructureIterator strucIter(motifs[0]->profile[1].elements, options.match_len);
-	std::tuple<int, int, int> bla;
+												  //7798, 8054
+	//std::cout << seqan::infix(seqan::value(seqs,0), 7797, 8053) << " sequence \n";
+
+	/*
+	StructureIterator strucIter(motifs[0]->profile[3].elements, options.match_len, false);
 
 	std::set<std::string> patSet;
-	std::unordered_map<std::string, std::vector<std::pair<std::string, std::pair<int, int> > > > stringCollision;
+	std::unordered_map<std::string, std::vector<std::pair<std::string, std::pair<int, THashType> > > > stringCollision;
 	//1710720
 	//18475776
 	//20528640
 
-	uint64_t test = 0;
-	while(bla != strucIter.end){
+
+	while(false && bla != strucIter.end && bla2 != strucIter2.end){
 		//std::cout << test << "\n";
 		int a,b,c;
 		bla = strucIter.get_next_char();
+		bla2 = strucIter2.get_next_char();
 		//std::tie(a,b,c) = bla;
 
-		//std::string strString = strucIter.printPattern();
+		std::string strString = strucIter.printPattern();
+		std::string strString2 = strucIter2.printPattern();
+
 		//std::cout << strString << " " << strucIter.patLen() << "\n";
 		//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << " " << strucIter.patHash() << " / " << hashString(strString) << "\n";
 		//std::cout << "Next: " << strucIter.prof_ptr-.> \n";
 
 		if (strucIter.patLen() >= options.match_len){
+			patSet.insert(strucIter.printPattern(false));
 			++test;
-			//std::cout << "Skipping " << strucIter.patLen() << "\n";
+		}
 
-			//std::cout << strString << " " << strucIter.patPos() << " " << strucIter.patLen() << "\n";
+		if (strucIter2.patLen() >= options.match_len){
+			patSet2.insert(strucIter2.printPattern(false));
+			++test2;
+		}
 
-			std::string strString = strucIter.printPattern(false);
-			//stringCollision[strString].push_back(std::make_pair(strucIter.printPattern(), std::make_pair(strucIter.pos, strucIter.element)));
+		std::cout << strString << " " << strucIter.patHash() << " - " << strString2 << " " << strucIter2.patHash() << "\n";
+		std::cout << test << " : " << patSet.size() << " - " << test2 << " : " << patSet2.size() << "\n";
 
-			//
-			//if (patSet.find(strString) != patSet.end()){
-			//	std::cout <<strString << " already seen?!\n";
+		if (strString != strString2){
+			std::cout << "Catch up\n";
+			// let iter1 catch up
+			while (strString != strString2){
+				strucIter.get_next_char();
+				strString = strucIter.printPattern();
 
-			//for (int i1=0; i1 < stringCollision[strString].size(); ++i1){
-			//std::cout << stringCollision[strString][i1].first << " " << stringCollision[strString][i1].second.first << " - " << stringCollision[strString][i1].second.second << "\n";
-			//				}
-			//}
-			//
+				if (strucIter.patLen() >= options.match_len){
+					patSet.insert(strucIter.printPattern(false));
+					++test;
+				}
 
-			patSet.insert(strString);
+				std::cout << strString << " " << strucIter.patHash() << " - " << strString2 << " " << strucIter2.patHash() << "\n";
+				std::cout << test << " : " << patSet.size() << " - " << test2 << " : " << patSet2.size() << "\n";
 
-			//if (!strucIter.full_pattern)
-			//strucIter.skip_char();
+				if (patSet.size() > patSet2.size()){
+					std::cout << "???\n";
+					return 0;
+				}
+			}
+
+			//std::cout << strString << " - " << strString2 << "\n";
 		}
 	}
 
-	std::cout << test << " " << patSet.size() << " SIZE\n";
+	if (false){
+		while(bla != strucIter.end){
+			bla = strucIter.get_next_char();
+			if (strucIter.patLen() >= options.match_len){
+				//patSet.insert(strucIter.printPattern(false));
+
+				++test;
+			}
+		}
+	}
+
+	std::set<std::string> patSet;
+	std::unordered_map<std::string, std::pair<std::vector<int>,std::vector<std::string> > > patList;
+	StructureIterator strucIter(motifs[0]->profile[0].elements, options.match_len, false, options.freq_threshold);
+	std::tuple<int, int, int> bla;
+	uint64_t test = 0;
+
+	int max_len = 0;
+
+	if (true){
+		while(bla != strucIter.end){
+			bla = strucIter.get_next_char();
+
+			int backtracked, lchar, rchar;
+			std::tie(backtracked, lchar, rchar) = bla;
+
+			//std::cout << strucIter2.printPattern() << " - (" << strucIter2.patPos().first << "," << strucIter2.patPos().second << ")\n";
+
+			if (strucIter.patLen() >= options.match_len){
+				//std::cout << strucIter.printPattern() << " - (" << strucIter.patPos().first << "," << strucIter.patPos().second << ")\n";
+
+				max_len = std::max(max_len, strucIter.patPos().second - strucIter.patPos().first);
+
+				std::string pat = strucIter.printPattern(false);
+				std::string gapped_pat = strucIter.printPattern();
+
+				patList[pat].first.push_back(gapped_pat.size());
+				patList[pat].second.push_back(gapped_pat);
+
+				int start = patList[pat].first[0];
+
+				//if (!std::is_sorted(patList[pat].first.begin(), patList[pat].first.end())){
+				if (!std::all_of(patList[pat].first.begin()+1, patList[pat].first.end(), [=](int i) {return (start < i);} )){
+					std::cout << "Wahh?\n";
+					for (int j=0; j < patList[pat].first.size(); ++j){
+						std::cout << patList[pat].second[j] << " " << patList[pat].first[j] << "\n";
+					}
+					std::cout << "\n";
+
+					return 0;
+				}
+
+				//patSet.insert(pat);
+				++test;
+			}
+		}
+
+	std::cout << test << " : " << patSet.size() << " - " << max_len << "\n";
 
 	return 0;
+	}
+	*/
 
 /*
 	for (auto elem1: motifs[0]->profile[2].elements){
@@ -580,9 +712,9 @@ int main(int argc, char const ** argv)
 	//	std::cout << *it << "\n";
 	//}
 
-	//searchProfile(seqs, motifs[0]->profile[2], options.match_len);
+	//searchProfile(seqs, motifs[0]->profile[5], options.match_len);
 
-	findFamilyMatches(seqs, motifs, options.match_len);
+	findFamilyMatches(seqs, motifs, reference_pos, options);
 
 	//TStructure &prof1 = motifs[0]->profile[2];
 

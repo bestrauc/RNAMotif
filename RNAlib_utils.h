@@ -313,6 +313,11 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 	structureToInteractions(structure, consensusStructure);
 	TStemLoopProfile stemLoops = findStemLoops(consensusStructure);
 
+	for (auto stemLoop : stemLoops){
+		std::cout << "Setting 0 \n";
+		stemLoop.suboptimal = 0;
+	}
+
 	if (skipEnforce){
 		for (auto stemLoop : stemLoops){
 			result_regions.push_back(stemLoop);
@@ -323,6 +328,8 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 
 	vrna_plist_t *pl1, *pl2;
 	bool first = true;
+
+	//int attempts = 0;
 
 	// iteratively enforce most likely bases from hairpins that haven't been encountered yet
 	do {
@@ -346,12 +353,15 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 					maxj = j+off;
 				}
 			}
+			std::cout << "Fuck you mfe\n";
 
+			/*
 			{
 			vrna_md_t md;
 			vrna_md_set_default(&md);
 			md.uniq_ML = 1;
 			md.ribo = 1;
+
 
 			vrna_fold_compound_t *vc2 	= vrna_fold_compound_comparative((const char**)seqs, &md, VRNA_OPTION_MFE | VRNA_OPTION_PF);
 			//std::cout << "Enforcing " << maxi << " " << maxj << "\n";
@@ -360,14 +370,15 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 
 			//vrna_fold_compound_free(vc2);
 			}
+			*/
 
-			/*
+
 			vrna_hc_init(vc);
 			std::cout << "Enforcing " << maxi << " " << maxj << "\n";
 			vrna_hc_add_bp(vc, maxi, maxj, VRNA_CONSTRAINT_CONTEXT_ALL_LOOPS | VRNA_CONSTRAINT_CONTEXT_ENFORCE);
 			vrna_mfe(vc, structure);
-			*/
 
+			std::cout << "End mfe\n";
 			//std::cout << "Vienna: " << structure << "\n";
 
 			structureToInteractions(structure, consensusStructure);
@@ -378,7 +389,6 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 			}
 		}
 
-		first = false;
 		std::vector<TConsensusStructure> structureVariants;
 
 		// check with which hairpins our stemLoops overlap
@@ -419,6 +429,13 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 						if (!stemAdded){
 							stemAdded = true;
 							//std::cout << "Added loop " << stemLoop.pos.first << " " << stemLoop.pos.second << "\n";
+							if (first){
+								stemLoop.suboptimal = 0;
+							}
+							else if (stemLoop.suboptimal == -1){
+								stemLoop.suboptimal = 1;
+							}
+
 							result_regions.push_back(stemLoop);
 							append_char_array(structures, structure, length);
 
@@ -440,6 +457,8 @@ TStemLoopProfile enforceHairpins(Motif &motif, std::unordered_map<int, std::tupl
 				}
 			}
 		}
+
+		first = false;
 
 		// TODO: Actually enforce hairpins.
 		//break;

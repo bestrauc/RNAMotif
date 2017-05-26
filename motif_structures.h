@@ -307,7 +307,10 @@ typedef seqan::IntervalAndCargo<long unsigned int, std::shared_ptr<std::vector<b
 typedef seqan::IntervalTree<long unsigned int, std::shared_ptr<std::vector<bool> >, seqan::StoreIntervals> TProfileInterval;
 
 typedef uint32_t THashType;
-const size_t HashTabLength = 1*1024*1024;
+const size_t HashTabLength = 1024*1024;
+
+// tolerance for the seach window to account for novel inserts
+const int eps = 10;
 
 struct StructureStatistics{
 	unsigned min_length;
@@ -344,6 +347,8 @@ typedef std::vector<int> TInteractions;
 typedef std::vector<std::pair<BracketType, std::pair<int, int> > > TSequenceRegions;
 
 typedef struct ProfileStructure{
+	int suboptimal = -1;
+
 	BracketType btype;
 	std::pair<int, int> pos;
 
@@ -380,6 +385,47 @@ struct Motif{
 	std::vector<TLoopProfileString> externalBases;
 
 	double mcc = 0;
+};
+
+// --------------------------------------------------------------------------
+// Class AppOptions
+// --------------------------------------------------------------------------
+
+struct RfamBenchRecord{
+	std::string ID;
+	int seq_nr;
+	int ref_nr;
+	std::string seq_name;
+	int start;
+	int end;
+	bool reverse;
+};
+
+// This struct stores the options from the command line.
+//
+// You might want to rename this to reflect the name of your app.
+
+struct AppOptions
+{
+    // Verbosity level.  0 -- quiet, 1 -- normal, 2 -- verbose, 3 -- very verbose.
+    int verbosity;
+    int fold_length;
+    int match_len;
+    unsigned threads;
+    bool constrain;
+    bool pseudoknot;
+    double freq_threshold;
+
+    // The first (and only) argument of the program is stored here.
+    seqan::CharString rna_file;
+    seqan::CharString genome_file;
+    seqan::CharString reference_file;
+
+    AppOptions() :
+        verbosity(1),
+		constrain(0),
+		pseudoknot(0)
+    {}
 };
 
 // ============================================================================
