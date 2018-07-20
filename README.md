@@ -11,4 +11,4 @@ The rest is self-contained in the repository.
 
 ## Known bugs
 
-The ViennaRNA C library sometimes seems to crash when using multiple threads for folding. The cause is unclear since I don't think that I share state between threads, but maybe something leaks internally in the ViennaRNA library.
+The ViennaRNA C library sometimes seems to crash when using multiple threads for folding (i.e. very simply folding multiple structures in parallel, not even using multiple threads to fold one structure). The cause is unclear since I don't think that I share state between threads, but maybe something leaks internally in the ViennaRNA library.
