@@ -38,8 +38,7 @@
 // SeqAn headers
 #include <seqan/align.h>
 #include <seqan/index.h>
-#include <seqan/misc/interval_tree.h>
-
+#include "stored_interval_tree.h"
 #include "stockholm_file.h"
 
 // C++ headers
@@ -62,180 +61,6 @@
 // ============================================================================
 // Tags, Classes, Enums
 // ============================================================================
-
-namespace seqan {
-
-// specialize seqan's Interval tree 'findIntervals' function to enable it to
-// return IntervalAndCargo to include boundaries of the overlapping intervals
-template <typename TValue, typename TCargo, typename TValue2>
-inline void
-findIntervals(
-        String<IntervalAndCargo<TValue, TCargo> > & result,
-        IntervalTree<TValue, TCargo> const & it,
-        TValue2 query)
-{
-    findIntervals(result, it.g, it.pm, query);
-}
-
-template <typename TSpec, typename TPropertyMap, typename TValue, typename TCargo, typename TValue2>
-inline void
-findIntervals(
-        String< IntervalAndCargo<TValue, TCargo> > & result,
-        Graph<TSpec> const & g,
-        TPropertyMap const & pm,
-		TValue2 query)
-{
-    typedef Graph<TSpec> const TGraph;
-    typedef typename VertexDescriptor<TGraph>::Type TVertexDescriptor;
-    typedef typename Value<TPropertyMap>::Type TProperty;
-    typedef typename Value<TProperty>::Type TPropertyValue;
-    typedef typename Iterator<TGraph, OutEdgeIterator>::Type TOutEdgeIterator;
-
-    resize(result, 0);
-    if (empty(g))
-        return;
-
-    // start at root
-    TVertexDescriptor act_knot = 0;
-    TProperty act_prop = property(pm, act_knot);
-    TProperty next_prop;
-
-    while (true)
-    {
-        //typename Iterator<Graph<TSpec>, OutEdgeIterator>::Type it7;
-        //Iter<Graph<TSpec>, GraphIterator<InternalOutEdgeIterator<OutEdgeIterator> > > it5(g, act_knot);
-        //TOutEdgeIterator it4;
-        TOutEdgeIterator it(g, act_knot);
-        act_prop = property(pm, act_knot);
-        if (act_prop.center < (TPropertyValue)query) // look in current node and right subtree
-        {
-            unsigned int i = 0;
-            while (i<length(act_prop.list2) && rightBoundary(value(act_prop.list2, i))>(TPropertyValue) query)
-            {
-            	auto &val = value(act_prop.list2, i);
-            	IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
-                appendValue(result, tmp, Generous());
-                ++i;
-            }
-            if (atEnd(it))
-                break;
-
-            next_prop = property(pm, targetVertex(it));
-            if (next_prop.center <= act_prop.center)
-            {
-                goNext(it);
-                if (atEnd(it))
-                    break;
-            }
-            act_knot = targetVertex(it);
-        }
-        else
-        {
-            if ((TPropertyValue)query < act_prop.center) // look in current node and left subtree
-            {
-                unsigned int i = 0;
-                while (i < length(act_prop.list1) && leftBoundary(value(act_prop.list1, i)) <= (TPropertyValue)query)
-                {
-                	auto &val = value(act_prop.list1, i);
-					IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
-					appendValue(result, tmp, Generous());
-                    ++i;
-                }
-                if (atEnd(it))
-                    break;
-
-                next_prop = property(pm, targetVertex(it));
-                if (next_prop.center >= act_prop.center)
-                {
-                    goNext(it);
-                    if (atEnd(it))
-                        break;
-                }
-                act_knot = targetVertex(it);
-            }
-            else  // look in current node only, as query is center
-            {
-                for (unsigned int i = 0; i < length(act_prop.list1); ++i){
-                	auto &val = value(act_prop.list1, i);
-					IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
-					appendValue(result, tmp, Generous());
-                }
-                break;
-            }
-        }
-    }
-}
-
-// do an inorder traversal of the tree and report all intervals
-template <typename TValue, typename TCargo>
-inline void
-getAllIntervals(
-        String<IntervalAndCargo<TValue, TCargo> > & result,
-		IntervalTree<TValue, TCargo, StoreIntervals> const & it)
-{
-	getAllIntervals(result, it.g, it.pm);
-}
-
-template <typename TSpec, typename TPropertyMap, typename TValue, typename TCargo>
-inline void
-getAllIntervals(
-        String<IntervalAndCargo<TValue, TCargo> > & result,
-        Graph<TSpec> const & g,
-        TPropertyMap const & pm)
-{
-    typedef Graph<TSpec> const TGraph;
-    typedef typename VertexDescriptor<TGraph>::Type TVertexDescriptor;
-
-	resize(result, 0);
-	// start at root
-	TVertexDescriptor act_knot = 0;
-	getAllIntervals(result, g, pm, act_knot);
-}
-
-template <typename TSpec, typename TPropertyMap, typename TValue, typename TCargo, typename TVertexDescriptor>
-inline void
-getAllIntervals(
-        String< IntervalAndCargo<TValue, TCargo> > & result,
-        Graph<TSpec> const & g,
-        TPropertyMap const & pm,
-		TVertexDescriptor & act_knot)
-{
-	typedef Graph<TSpec> const TGraph;
-	typedef typename Value<TPropertyMap>::Type TProperty;
-	//typedef typename Value<TProperty>::Type TPropertyValue;
-	typedef typename Iterator<TGraph, OutEdgeIterator>::Type TOutEdgeIterator;
-
-	if (empty(g))
-		return;
-
-	TProperty act_prop = property(pm, act_knot);
-	TProperty next_prop;
-
-	TOutEdgeIterator it(g, act_knot);
-
-	// go left
-	if (!atEnd(it)){
-		TVertexDescriptor next_knot = targetVertex(it);
-		getAllIntervals(result, g, pm, next_knot);
-		goNext(it);
-	}
-
-	// append center list
-	for (unsigned int i = 0; i < length(act_prop.list1); ++i){
-		auto &val = value(act_prop.list1, i);
-		IntervalAndCargo<TValue, TCargo> tmp(leftBoundary(val), rightBoundary(val), cargo(val));
-		appendValue(result, tmp, Generous());
-	}
-
-	// go right
-	if (!atEnd(it))
-	{
-		TVertexDescriptor next_knot = targetVertex(it);
-		getAllIntervals(result, g, pm, next_knot);
-	}
-}
-
-}
 
 /* Various types related to secondary structure */
 
@@ -304,7 +129,7 @@ typedef seqan::String<seqan::ProfileChar<TAlphabet> > TLoopProfileString;
 typedef seqan::String<seqan::ProfileChar<TBiAlphabet> > TStemProfileString;
 
 typedef seqan::IntervalAndCargo<long unsigned int, std::shared_ptr<std::vector<bool> > > TProfileCargo;
-typedef seqan::IntervalTree<long unsigned int, std::shared_ptr<std::vector<bool> >, seqan::StoreIntervals> TProfileInterval;
+typedef seqan::StoredIntervalTree<long unsigned int, std::shared_ptr<std::vector<bool> >, seqan::StoreIntervals> TProfileInterval;
 
 typedef uint32_t THashType;
 const size_t HashTabLength = 1024*1024;
