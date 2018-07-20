@@ -48,8 +48,8 @@
 #include <unordered_map>
 
 // App headers
-#include "RNAlib_utils.h"
-#include "IPknot_utils.h"
+#include "folding_utils/RNAlib_utils.h"
+#include "folding_utils/IPknot_utils.h"
 #include "motif.h"
 
 // reading the Stockholm format

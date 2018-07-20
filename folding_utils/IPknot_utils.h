@@ -38,7 +38,7 @@
 #ifndef APPS_RNAMOTIF_IPKNOT_UTILS_H_
 #define APPS_RNAMOTIF_IPKNOT_UTILS_H_
 
-#include "motif_structures.h"
+#include "../motif_structures.h"
 
 // Import IPknot libraries
 #include "ipknot/ip.h"

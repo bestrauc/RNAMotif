@@ -35,9 +35,10 @@
 #ifndef APPS_RNAMOTIF_RNALIB_UTILS_H_
 #define APPS_RNAMOTIF_RNALIB_UTILS_H_
 
-#include "motif_structures.h"
-#include "motif.h"
-#include "stockholm_file.h"
+#include "../motif_structures.h"
+#include "../motif.h"
+#include "../stockholm_file.h"
+
 #include <functional>
 #include <stack>
 
