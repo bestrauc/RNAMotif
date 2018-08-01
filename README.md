@@ -1,5 +1,5 @@
 # RNAMotif
-RNA Motif generator and finder
+RNA Motif generator and finder, code and experiments from my Bioinformatics Master's thesis.
 
 
 ## Dependencies
